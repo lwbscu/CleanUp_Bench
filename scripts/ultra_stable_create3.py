@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-CUDA加速优化版Create-3+机械臂垃圾收集系统
-添加A*路径规划、智能导航和CUDA性能优化
+CUDA加速优化版Create-3+机械臂垃圾收集系统（尺寸修复版）
+使用原始USD资产库，室内清洁场景演示
 """
 
 from isaacsim import SimulationApp
@@ -28,15 +28,22 @@ from isaacsim.core.api.objects import DynamicCuboid, FixedCuboid, DynamicSphere
 from isaacsim.robot.wheeled_robots.robots import WheeledRobot
 from isaacsim.robot.wheeled_robots.controllers.differential_controller import DifferentialController
 from isaacsim.core.utils.types import ArticulationAction
-from pxr import UsdLux, UsdPhysics, Gf
+from pxr import UsdLux, UsdPhysics, Gf, Usd
 import isaacsim.core.utils.prims as prim_utils
 
-class OptimizedCreate3ArmSystem:
-    """CUDA加速优化版Create-3+机械臂垃圾收集系统"""
+class OptimizedCreate3CleanupSystem:
+    """CUDA加速优化版Create-3+机械臂室内清洁系统（尺寸修复版）"""
     
     def __init__(self):
         self.world = None
         self.robot_prim_path = "/World/create3_robot"
+        
+        # 原始资产库路径配置
+        self.residential_assets_root = "/home/lwb/isaacsim/extension_examples/CleanUp_Bench/Residential"
+        self.robot_usd_path = "/home/lwb/isaacsim_assets/Assets/Isaac/4.5/Isaac/Robots/iRobot/create_3_with_arm.usd"
+        
+        print(f"🔧 住宅资产库: {self.residential_assets_root}")
+        print(f"🤖 机器人模型: {self.robot_usd_path}")
         
         # 机器人相关
         self.mobile_base = None
@@ -47,8 +54,8 @@ class OptimizedCreate3ArmSystem:
         # 优化的控制参数
         self.movement_threshold = 0.6    # 60cm到达标准
         self.angular_threshold = 0.3     # 17度角度标准
-        self.max_linear_velocity = 0.5   # 提高线速度
-        self.max_angular_velocity = 1.8  # 提高角速度
+        self.max_linear_velocity = 0.5   # 最大线速度
+        self.max_angular_velocity = 1.8  # 最大角速度
         
         # 智能平滑控制
         self.current_linear_vel = 0.0
@@ -59,6 +66,7 @@ class OptimizedCreate3ArmSystem:
         self.small_trash_objects = []
         self.large_trash_objects = []
         self.collected_objects = []
+        self.scene_objects = []
         
         # 轮子关节配置
         self.wheel_config = ["left_wheel_joint", "right_wheel_joint"]
@@ -87,7 +95,7 @@ class OptimizedCreate3ArmSystem:
         self.gripper_closed = 0.0
         
         # 导航优化
-        self.navigation_history = deque(maxlen=50)  # 记录最近50个位置
+        self.navigation_history = deque(maxlen=50)
         self.stuck_threshold = 0.08  # 8cm卡住阈值
         self.stuck_detection_window = 200  # 200步检测窗口
         
@@ -96,35 +104,112 @@ class OptimizedCreate3ArmSystem:
         self.map_size = 20  # 20x20米地图
         self.obstacle_map = None
         
-    def get_robot_usd_path(self):
-        """获取机器人USD文件路径（支持多种环境）"""
-        # 尝试多个可能的路径
-        possible_paths = [
-            # 环境变量路径
-            os.path.join(os.getenv('ISAAC_ASSETS_ROOT', ''), 'Isaac/Robots/iRobot/create_3_with_arm.usd'),
-            # Isaac Sim默认路径
-            '/Isaac/Robots/iRobot/create_3_with_arm.usd',
-            # 备用路径
-            'Isaac/Robots/iRobot/create_3_with_arm.usd',
-            # 本地assets路径（如果存在）
-            './assets/create_3_with_arm.usd'
-        ]
+        # *** 新增：尺寸配置 ***
+        # 不同类型物品的缩放比例
+        self.scale_config = {
+            "furniture": 0.03,      # 家具缩放到3%（原来的30倍缩小）
+            "small_trash": 1.0,     # 小垃圾保持原始大小
+            "large_trash": 0.8,     # 大垃圾略微缩小
+            "books": 0.5,           # 书籍缩放到50%
+        }
         
-        for path in possible_paths:
-            if path and (os.path.exists(path) or not path.startswith('/')):
-                print(f"🔧 使用机器人USD路径: {path}")
-                return path
+        # 原始资产库配置 (使用实际文件路径和小文件)
+        self.asset_config = {
+            # 家具配置 (选择小尺寸文件)
+            "furniture": {
+                "desk": "Furniture/Desks/Desk_01.usd",  # 135.02 KB
+                "chair": "Furniture/Chairs/Chair_Desk.usd",  # 519.59 KB
+                "coffee_table": "Furniture/CoffeeTables/Midtown.usd",  # 99.14 KB
+                "side_table": "Furniture/EndTables/Festus01.usd",  # 6.87 KB
+                "console_table": "Furniture/SofaTables/Ellisville.usd",  # 798.44 KB
+                "bookshelf": "Furniture/Bookshelves/Fenton.usd",  # 354.04 KB
+            },
+            
+            # 小垃圾物品 (吸附收集)
+            "small_trash": {
+                "orange1": "Decor/Tchotchkes/Orange_01.usd",  # 990.13 KB
+                "orange2": "Decor/Tchotchkes/Orange_02.usd",  # 770.32 KB
+                "lemon1": "Decor/Tchotchkes/Lemon_01.usd",   # 63.76 KB
+                "lemon2": "Decor/Tchotchkes/Lemon_02.usd",   # 61.95 KB
+                "coaster": "Decor/Coasters/Coaster_Hexagon.usd",  # 5.59 KB
+                "eraser": "Misc/Supplies/Eraser.usd",  # 14.74 KB
+                "marble": "Entertainment/Games/Solid_Marble.usd",  # 24.09 KB
+            },
+            
+            # 大垃圾物品 (机械臂抓取)
+            "large_trash": {
+                "tin_can": "Food/Containers/TinCan.usd",  # 372.33 KB
+                "mason_jar": "Food/Containers/MasonJar.usd",  # 254.92 KB
+                "pencil": "Misc/Supplies/MechanicalPencil.usd",  # 142.53 KB
+                "dice_d6": "Entertainment/Games/DiceSet/D6.usd",  # 7.64 KB
+                "dice_d20": "Entertainment/Games/DiceSet/D20.usd",  # 32.43 KB
+            },
+            
+            # 书籍装饰
+            "books": {
+                "book1": "Decor/Books/Book_01.usd",  # 37.93 KB
+                "book2": "Decor/Books/Book_02.usd",  # 38.02 KB
+                "book3": "Decor/Books/Book_11.usd",  # 38.02 KB
+            }
+        }
+    
+    def get_asset_path(self, relative_path):
+        """获取住宅资产的完整路径"""
+        full_path = os.path.join(self.residential_assets_root, relative_path)
+        if os.path.exists(full_path):
+            return full_path
+        else:
+            print(f"⚠️ 资产文件不存在: {full_path}")
+            return relative_path  # 返回相对路径作为备用
+    
+    def verify_assets(self):
+        """验证所有必需的资产文件"""
+        print("🔍 验证资产文件...")
         
-        # 如果都找不到，使用默认的Isaac路径
-        default_path = '/Isaac/Robots/iRobot/create_3_with_arm.usd'
-        print(f"⚠️ 使用默认机器人USD路径: {default_path}")
-        return default_path
+        # 验证机器人模型
+        if os.path.exists(self.robot_usd_path):
+            size_mb = os.path.getsize(self.robot_usd_path) / (1024*1024)
+            print(f"   ✅ 机器人模型: create_3_with_arm.usd ({size_mb:.1f} MB)")
+        else:
+            print(f"   ❌ 机器人模型缺失: {self.robot_usd_path}")
+            return False
         
+        # 验证住宅资产库
+        if not os.path.exists(self.residential_assets_root):
+            print(f"   ❌ 住宅资产库缺失: {self.residential_assets_root}")
+            return False
+        
+        # 验证关键资产文件
+        critical_assets = []
+        for category, items in self.asset_config.items():
+            for name, relative_path in items.items():
+                full_path = self.get_asset_path(relative_path)
+                if os.path.exists(full_path):
+                    size_kb = os.path.getsize(full_path) / 1024
+                    scale = self.scale_config.get(category, 1.0)
+                    critical_assets.append(f"   ✅ {name}: {size_kb:.1f} KB (缩放: {scale:.2f})")
+                else:
+                    print(f"   ❌ 缺失资产: {name} -> {relative_path}")
+                    return False
+        
+        print(f"✅ 资产验证通过，共 {len(critical_assets)} 个文件:")
+        for asset in critical_assets[:5]:  # 只显示前5个
+            print(asset)
+        if len(critical_assets) > 5:
+            print(f"   ... 还有 {len(critical_assets) - 5} 个文件")
+        
+        return True
+    
     def initialize_isaac_sim(self):
         """初始化Isaac Sim环境（CUDA优化）"""
         print("🚀 正在初始化Isaac Sim环境（CUDA加速）...")
         
         try:
+            # 验证资产文件
+            if not self.verify_assets():
+                print("❌ 资产验证失败，请检查文件路径")
+                return False
+            
             # 创建世界（启用GPU加速）
             self.world = World(
                 stage_units_in_meters=1.0,
@@ -206,10 +291,6 @@ class OptimizedCreate3ArmSystem:
         try:
             map_cells = int(self.map_size / self.grid_resolution)
             self.obstacle_map = np.zeros((map_cells, map_cells), dtype=bool)
-            
-            # 这里可以添加已知障碍物
-            # 例如：self.obstacle_map[50:60, 50:60] = True  # 5x5米障碍物
-            
             print(f"✅ A*路径规划地图初始化完成 ({map_cells}x{map_cells})")
         except Exception as e:
             print(f"障碍物地图初始化失败: {e}")
@@ -219,11 +300,8 @@ class OptimizedCreate3ArmSystem:
         print("🤖 正在初始化Create-3+机械臂（高性能配置）...")
         
         try:
-            # 使用动态路径获取USD文件
-            usd_path = self.get_robot_usd_path()
-            
             print(f"🔧 使用轮子配置: {self.wheel_config}")
-            print(f"🦾 加载机械臂版本: {usd_path}")
+            print(f"🦾 加载机器人模型: {self.robot_usd_path}")
             
             # 创建机器人（高性能参数）
             self.mobile_base = WheeledRobot(
@@ -231,7 +309,7 @@ class OptimizedCreate3ArmSystem:
                 name="create3_robot",
                 wheel_dof_names=self.wheel_config,
                 create_robot=True,
-                usd_path=usd_path,
+                usd_path=self.robot_usd_path,
                 position=np.array([0.0, 0.0, 0.0])
             )
             
@@ -256,6 +334,315 @@ class OptimizedCreate3ArmSystem:
             traceback.print_exc()
             return False
     
+    def create_indoor_scene(self):
+        """创建室内清洁场景（修复尺寸）"""
+        print("🏠 创建室内清洁场景（正确尺寸）...")
+        
+        try:
+            stage = self.world.stage
+            
+            # 创建家具 - 使用正确的缩放比例
+            furniture_positions = {
+                "desk": [3.0, 2.0, 0.0, 0.0],  # x, y, z, rotation_z
+                "chair": [3.0, 1.2, 0.0, 0.0],
+                "coffee_table": [-2.0, 1.5, 0.0, 0.0],
+                "side_table": [2.0, -2.0, 0.0, 45.0],
+                "console_table": [-3.0, -1.0, 0.0, 90.0],
+                "bookshelf": [-2.5, -2.5, 0.0, 0.0]
+            }
+            
+            furniture_scale = self.scale_config["furniture"]  # 获取家具缩放比例
+            print(f"🔧 家具缩放比例: {furniture_scale}")
+            
+            for furniture_name, (x, y, z, rot) in furniture_positions.items():
+                if furniture_name in self.asset_config["furniture"]:
+                    usd_path = self.get_asset_path(self.asset_config["furniture"][furniture_name])
+                    prim_path = f"/World/Furniture/{furniture_name}"
+                    
+                    # 创建引用
+                    furniture_prim = stage.DefinePrim(prim_path, "Xform")
+                    furniture_prim.GetReferences().AddReference(usd_path)
+                    
+                    # 使用新的带缩放的transform设置
+                    self._safe_set_transform_with_scale(furniture_prim, x, y, z, rot, furniture_scale)
+                    
+                    print(f"   ✅ 创建家具: {furniture_name} 在位置 ({x}, {y}, {z}) 缩放: {furniture_scale}")
+            
+            # 添加一些书籍装饰 - 使用正确的缩放比例
+            book_positions = [
+                ("book1", [-2.3, -2.3, 0.8]),
+                ("book2", [-2.1, -2.3, 0.8]),
+                ("book3", [-1.9, -2.3, 0.8]),
+            ]
+            
+            book_scale = self.scale_config["books"]  # 获取书籍缩放比例
+            print(f"📚 书籍缩放比例: {book_scale}")
+            
+            for book_name, (x, y, z) in book_positions:
+                if book_name in self.asset_config["books"]:
+                    usd_path = self.get_asset_path(self.asset_config["books"][book_name])
+                    prim_path = f"/World/Books/{book_name}"
+                    
+                    book_prim = stage.DefinePrim(prim_path, "Xform")
+                    book_prim.GetReferences().AddReference(usd_path)
+                    
+                    # 使用新的带缩放的transform设置
+                    self._safe_set_transform_with_scale(book_prim, x, y, z, 0.0, book_scale)
+                    
+                    print(f"   📚 放置书籍: {book_name} 在位置 ({x}, {y}, {z}) 缩放: {book_scale}")
+            
+            print("✅ 室内场景创建完成（正确尺寸）")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 创建室内场景失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _safe_set_transform_with_scale(self, prim, x, y, z, rot_z, scale=1.0):
+        """安全地设置USD prim的transform，包含缩放"""
+        try:
+            from pxr import UsdGeom
+            xform = UsdGeom.Xform(prim)
+            
+            # 清除现有的变换操作
+            xform.ClearXformOpOrder()
+            
+            # 按顺序添加变换操作：缩放 -> 旋转 -> 平移
+            
+            # 1. 添加缩放操作
+            if scale != 1.0:
+                scale_op = xform.AddScaleOp()
+                scale_op.Set(Gf.Vec3f(scale, scale, scale))
+                print(f"     设置缩放: {scale}")
+            
+            # 2. 添加旋转操作（如果需要）
+            if rot_z != 0.0:
+                rotate_op = xform.AddRotateZOp()
+                rotate_op.Set(rot_z)
+                print(f"     设置旋转: {rot_z}度")
+            
+            # 3. 添加平移操作
+            translate_op = xform.AddTranslateOp()
+            translate_op.Set(Gf.Vec3d(x, y, z))
+            print(f"     设置位置: ({x}, {y}, {z})")
+            
+        except Exception as e:
+            print(f"设置带缩放的transform失败: {e}")
+            # 备用方案：使用矩阵变换
+            try:
+                from pxr import UsdGeom
+                xform = UsdGeom.Xform(prim)
+                
+                # 创建缩放矩阵
+                scale_matrix = Gf.Matrix4d(
+                    scale, 0, 0, 0,
+                    0, scale, 0, 0,
+                    0, 0, scale, 0,
+                    0, 0, 0, 1
+                )
+                
+                # 创建旋转矩阵
+                import math
+                cos_rot = math.cos(math.radians(rot_z))
+                sin_rot = math.sin(math.radians(rot_z))
+                
+                rotation_matrix = Gf.Matrix4d(
+                    cos_rot, -sin_rot, 0, 0,
+                    sin_rot, cos_rot, 0, 0,
+                    0, 0, 1, 0,
+                    0, 0, 0, 1
+                )
+                
+                # 创建平移矩阵
+                translation_matrix = Gf.Matrix4d(
+                    1, 0, 0, x,
+                    0, 1, 0, y,
+                    0, 0, 1, z,
+                    0, 0, 0, 1
+                )
+                
+                # 组合变换：平移 * 旋转 * 缩放
+                final_matrix = translation_matrix * rotation_matrix * scale_matrix
+                
+                # 应用变换矩阵
+                matrix_op = xform.AddTransformOp()
+                matrix_op.Set(final_matrix)
+                
+                print(f"     备用方案：矩阵变换设置成功")
+                
+            except Exception as e2:
+                print(f"备用transform设置也失败: {e2}")
+    
+    def _safe_set_transform(self, prim, x, y, z, rot_z):
+        """兼容性函数：不带缩放的transform设置"""
+        self._safe_set_transform_with_scale(prim, x, y, z, rot_z, scale=1.0)
+    
+    def create_cleanup_environment(self):
+        """创建清洁环境（垃圾物品）- 修复尺寸"""
+        print("🗑️ 创建清洁环境（正确尺寸）...")
+        
+        try:
+            stage = self.world.stage
+            
+            # 小垃圾物品位置（使用住宅资产库的小型USD模型）
+            small_trash_config = [
+                ("orange1", [1.5, 0.5, 0.03], "small_trash", self.asset_config["small_trash"]["orange1"]),
+                ("lemon1", [2.0, -0.8, 0.03], "small_trash", self.asset_config["small_trash"]["lemon1"]),
+                ("coaster", [1.8, 1.2, 0.01], "small_trash", self.asset_config["small_trash"]["coaster"]),
+                ("eraser", [-1.5, 0.8, 0.015], "small_trash", self.asset_config["small_trash"]["eraser"]),
+                ("marble", [2.5, 0.2, 0.015], "small_trash", self.asset_config["small_trash"]["marble"]),
+                ("orange2", [-1.2, 1.8, 0.03], "small_trash", self.asset_config["small_trash"]["orange2"]),
+                ("lemon2", [1.0, -1.5, 0.03], "small_trash", self.asset_config["small_trash"]["lemon2"]),
+            ]
+            
+            small_trash_scale = self.scale_config["small_trash"]  # 获取小垃圾缩放比例
+            print(f"🔸 小垃圾缩放比例: {small_trash_scale}")
+            
+            # 创建小垃圾（使用USD模型）
+            for i, (name, pos, category, usd_relative_path) in enumerate(small_trash_config):
+                usd_path = self.get_asset_path(usd_relative_path)
+                prim_path = f"/World/SmallTrash/{name}_{i}"
+                
+                # 创建USD引用
+                trash_prim = stage.DefinePrim(prim_path, "Xform")
+                trash_prim.GetReferences().AddReference(usd_path)
+                
+                # 使用带缩放的transform设置
+                self._safe_set_transform_with_scale(trash_prim, pos[0], pos[1], pos[2], 0.0, small_trash_scale)
+                
+                # 添加到小垃圾列表（创建包装对象）
+                trash_obj = self._create_object_wrapper(prim_path, f"small_{name}_{i}", pos)
+                self.small_trash_objects.append(trash_obj)
+                
+                print(f"   📍 小垃圾: {name} 在位置 {pos} 缩放: {small_trash_scale}")
+            
+            # 大垃圾物品位置
+            large_trash_config = [
+                ("tin_can", [2.2, 1.8, 0.05], "large_trash", self.asset_config["large_trash"]["tin_can"]),
+                ("mason_jar", [-2.0, -1.5, 0.05], "large_trash", self.asset_config["large_trash"]["mason_jar"]),
+                ("pencil", [1.0, -2.2, 0.05], "large_trash", self.asset_config["large_trash"]["pencil"]),
+                ("dice_d6", [2.8, 1.0, 0.05], "large_trash", self.asset_config["large_trash"]["dice_d6"]),
+                ("dice_d20", [-1.8, 2.2, 0.05], "large_trash", self.asset_config["large_trash"]["dice_d20"]),
+            ]
+            
+            large_trash_scale = self.scale_config["large_trash"]  # 获取大垃圾缩放比例
+            print(f"🔹 大垃圾缩放比例: {large_trash_scale}")
+            
+            # 创建大垃圾（需要机械臂抓取）
+            for i, (name, pos, category, usd_relative_path) in enumerate(large_trash_config):
+                usd_path = self.get_asset_path(usd_relative_path)
+                prim_path = f"/World/LargeTrash/{name}_{i}"
+                
+                # 创建USD引用
+                trash_prim = stage.DefinePrim(prim_path, "Xform")
+                trash_prim.GetReferences().AddReference(usd_path)
+                
+                # 使用带缩放的transform设置
+                self._safe_set_transform_with_scale(trash_prim, pos[0], pos[1], pos[2], 0.0, large_trash_scale)
+                
+                # 添加到大垃圾列表
+                trash_obj = self._create_object_wrapper(prim_path, f"large_{name}_{i}", pos)
+                self.large_trash_objects.append(trash_obj)
+                
+                print(f"   🦾 大垃圾: {name} 在位置 {pos} 缩放: {large_trash_scale}")
+            
+            print(f"✅ 清洁环境创建完成（正确尺寸）:")
+            print(f"   - 小垃圾(吸附): {len(self.small_trash_objects)}个")
+            print(f"   - 大垃圾(抓取): {len(self.large_trash_objects)}个")
+            print(f"   - 家具缩放: {self.scale_config['furniture']}")
+            print(f"   - 小垃圾缩放: {self.scale_config['small_trash']}")
+            print(f"   - 大垃圾缩放: {self.scale_config['large_trash']}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ 创建清洁环境失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    # 调整缩放比例的便捷方法
+    def adjust_scale_config(self, furniture_scale=None, small_trash_scale=None, 
+                           large_trash_scale=None, books_scale=None):
+        """动态调整缩放配置"""
+        if furniture_scale is not None:
+            self.scale_config["furniture"] = furniture_scale
+            print(f"🔧 家具缩放调整为: {furniture_scale}")
+        
+        if small_trash_scale is not None:
+            self.scale_config["small_trash"] = small_trash_scale
+            print(f"🔸 小垃圾缩放调整为: {small_trash_scale}")
+        
+        if large_trash_scale is not None:
+            self.scale_config["large_trash"] = large_trash_scale
+            print(f"🔹 大垃圾缩放调整为: {large_trash_scale}")
+        
+        if books_scale is not None:
+            self.scale_config["books"] = books_scale
+            print(f"📚 书籍缩放调整为: {books_scale}")
+    
+    def _create_object_wrapper(self, prim_path, name, position):
+        """创建对象包装器以提供统一接口"""
+        class ObjectWrapper:
+            def __init__(self, prim_path, name, position, stage):
+                self.prim_path = prim_path
+                self.name = name
+                self._position = np.array(position)
+                self._stage = stage
+                
+            def get_world_pose(self):
+                """获取世界位置和方向"""
+                try:
+                    prim = self._stage.GetPrimAtPath(self.prim_path)
+                    if prim.IsValid():
+                        from pxr import UsdGeom
+                        xform = UsdGeom.Xform(prim)
+                        matrix = xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                        translation = matrix.ExtractTranslation()
+                        position = np.array([translation[0], translation[1], translation[2]])
+                        
+                        # 简化的方向（单位四元数）
+                        orientation = np.array([0.0, 0.0, 0.0, 1.0])
+                        return position, orientation
+                    else:
+                        return self._position, np.array([0.0, 0.0, 0.0, 1.0])
+                except:
+                    return self._position, np.array([0.0, 0.0, 0.0, 1.0])
+            
+            def set_world_pose(self, position, orientation):
+                """设置世界位置和方向"""
+                try:
+                    prim = self._stage.GetPrimAtPath(self.prim_path)
+                    if prim.IsValid():
+                        from pxr import UsdGeom
+                        xform = UsdGeom.Xform(prim)
+                        
+                        # 安全地获取或创建平移操作
+                        existing_ops = xform.GetOrderedXformOps()
+                        translate_op = None
+                        
+                        # 查找现有的平移操作
+                        for op in existing_ops:
+                            if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+                                translate_op = op
+                                break
+                        
+                        # 如果没有找到，创建新的
+                        if translate_op is None:
+                            translate_op = xform.AddTranslateOp()
+                        
+                        translate_op.Set(Gf.Vec3d(position[0], position[1], position[2]))
+                        self._position = np.array(position)
+                        
+                except Exception as e:
+                    print(f"设置位置失败: {e}")
+                    # 备用方案：直接更新内部位置
+                    self._position = np.array(position)
+        
+        return ObjectWrapper(prim_path, name, position, self.world.stage)
+    
     def setup_post_load(self):
         """World加载后的高性能设置"""
         print("🔧 正在进行高性能后加载设置...")
@@ -264,8 +651,8 @@ class OptimizedCreate3ArmSystem:
             # 启动世界
             self.world.reset()
             
-            # 快速稳定（减少等待时间）
-            for _ in range(30):  # 从50减少到30
+            # 快速稳定
+            for _ in range(30):
                 self.world.step(render=True)
                 time.sleep(0.016)  # 60FPS
             
@@ -340,6 +727,10 @@ class OptimizedCreate3ArmSystem:
             kp = np.zeros(num_dofs)
             kd = np.zeros(num_dofs)
             
+            print(f"   总DOF数量: {num_dofs}")
+            for i, name in enumerate(self.mobile_base.dof_names):
+                print(f"     [{i:2d}] {name}")
+            
             # 高性能轮子关节设置
             wheel_indices = []
             wheel_names_to_find = ["left_wheel_joint", "right_wheel_joint"]
@@ -351,6 +742,36 @@ class OptimizedCreate3ArmSystem:
                     kp[idx] = 0.0      # 速度控制
                     kd[idx] = 800.0    # 提高阻尼获得更好响应
                     print(f"   轮子关节: {wheel_name} (索引: {idx})")
+                else:
+                    print(f"   ⚠️ 未找到轮子关节: {wheel_name}")
+            
+            # 如果没有找到标准轮子关节名，尝试其他可能的名称
+            if len(wheel_indices) == 0:
+                alternative_wheel_names = [
+                    "wheel_left_joint", "wheel_right_joint",
+                    "left_wheel", "right_wheel",
+                    "base_footprint_left_wheel_joint", "base_footprint_right_wheel_joint"
+                ]
+                
+                for wheel_name in alternative_wheel_names:
+                    if wheel_name in self.mobile_base.dof_names:
+                        idx = self.mobile_base.dof_names.index(wheel_name)
+                        wheel_indices.append(idx)
+                        kp[idx] = 0.0
+                        kd[idx] = 800.0
+                        print(f"   备用轮子关节: {wheel_name} (索引: {idx})")
+                        
+                        if len(wheel_indices) >= 2:
+                            break
+            
+            # 如果还是没找到，假设前两个关节是轮子
+            if len(wheel_indices) == 0 and num_dofs >= 2:
+                print("   ⚠️ 使用前两个DOF作为轮子关节")
+                wheel_indices = [0, 1]
+                kp[0] = 0.0
+                kd[0] = 800.0
+                kp[1] = 0.0
+                kd[1] = 800.0
             
             # 高性能机械臂关节设置
             arm_indices = []
@@ -388,6 +809,8 @@ class OptimizedCreate3ArmSystem:
             
         except Exception as e:
             print(f"设置关节控制失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _optimize_robot_physics(self):
         """优化机器人物理属性（高性能）"""
@@ -446,8 +869,8 @@ class OptimizedCreate3ArmSystem:
                 action = ArticulationAction(joint_positions=joint_positions)
                 articulation_controller.apply_action(action)
                 
-                # 快速等待（减少时间）
-                for _ in range(20):  # 从30减少到20
+                # 快速等待
+                for _ in range(20):
                     self.world.step(render=True)
                     time.sleep(0.016)  # 60FPS
                 
@@ -480,7 +903,7 @@ class OptimizedCreate3ArmSystem:
                 articulation_controller.apply_action(action)
                 
                 # 快速等待
-                for _ in range(10):  # 从15减少到10
+                for _ in range(10):
                     self.world.step(render=True)
                     time.sleep(0.016)
                 
@@ -498,15 +921,15 @@ class OptimizedCreate3ArmSystem:
             
             initial_pos, initial_yaw = self.get_robot_pose()
             
-            # 快速测试（减少时间）
-            for _ in range(60):  # 从150减少到60
+            # 快速测试
+            for _ in range(60):
                 success = self._send_movement_command(0.3, 0.0)
                 if success:
                     self.world.step(render=True)
                     time.sleep(0.016)
             
             self._send_movement_command(0.0, 0.0)
-            self._wait_for_stability(0.5)  # 减少等待时间
+            self._wait_for_stability(0.5)
             
             final_pos, final_yaw = self.get_robot_pose()
             distance_moved = np.linalg.norm(final_pos[:2] - initial_pos[:2])
@@ -556,32 +979,70 @@ class OptimizedCreate3ArmSystem:
             linear_vel = np.clip(linear_vel, -self.max_linear_velocity, self.max_linear_velocity)
             angular_vel = np.clip(angular_vel, -self.max_angular_velocity, self.max_angular_velocity)
             
-            # 优先使用差分控制器
-            if self.differential_controller and hasattr(self.mobile_base, 'apply_wheel_actions'):
-                command = np.array([linear_vel, angular_vel])
-                action = self.differential_controller.forward(command)
-                self.mobile_base.apply_wheel_actions(action)
-                return True
+            # 方案1：使用差分控制器 + apply_wheel_actions
+            if self.differential_controller and self.mobile_base:
+                try:
+                    command = np.array([linear_vel, angular_vel])
+                    wheel_actions = self.differential_controller.forward(command)
+                    
+                    # 检查是否有apply_wheel_actions方法
+                    if hasattr(self.mobile_base, 'apply_wheel_actions'):
+                        self.mobile_base.apply_wheel_actions(wheel_actions)
+                        return True
+                except Exception as e:
+                    print(f"方案1失败: {e}")
             
-            # 备用方案
-            elif hasattr(self, 'wheel_joint_indices') and len(self.wheel_joint_indices) == 2:
-                articulation_controller = self.mobile_base.get_articulation_controller()
-                if articulation_controller:
-                    wheel_radius = 0.036
-                    wheel_base = 0.235
-                    
-                    left_wheel_vel = (linear_vel - angular_vel * wheel_base / 2.0) / wheel_radius
-                    right_wheel_vel = (linear_vel + angular_vel * wheel_base / 2.0) / wheel_radius
-                    
-                    num_dofs = len(self.mobile_base.dof_names)
-                    joint_velocities = np.zeros(num_dofs)
-                    joint_velocities[self.wheel_joint_indices[0]] = left_wheel_vel
-                    joint_velocities[self.wheel_joint_indices[1]] = right_wheel_vel
-                    
-                    action = ArticulationAction(joint_velocities=joint_velocities)
-                    articulation_controller.apply_action(action)
-                    return True
+            # 方案2：直接使用关节控制器
+            if hasattr(self, 'wheel_joint_indices') and len(self.wheel_joint_indices) >= 2:
+                try:
+                    articulation_controller = self.mobile_base.get_articulation_controller()
+                    if articulation_controller:
+                        wheel_radius = 0.036
+                        wheel_base = 0.235
+                        
+                        left_wheel_vel = (linear_vel - angular_vel * wheel_base / 2.0) / wheel_radius
+                        right_wheel_vel = (linear_vel + angular_vel * wheel_base / 2.0) / wheel_radius
+                        
+                        num_dofs = len(self.mobile_base.dof_names) if hasattr(self.mobile_base, 'dof_names') else 10
+                        joint_velocities = np.zeros(num_dofs)
+                        
+                        joint_velocities[self.wheel_joint_indices[0]] = left_wheel_vel
+                        joint_velocities[self.wheel_joint_indices[1]] = right_wheel_vel
+                        
+                        action = ArticulationAction(joint_velocities=joint_velocities)
+                        articulation_controller.apply_action(action)
+                        return True
+                except Exception as e:
+                    print(f"方案2失败: {e}")
             
+            # 方案3：简化的差分控制
+            if self.differential_controller:
+                try:
+                    command = np.array([linear_vel, angular_vel])
+                    wheel_actions = self.differential_controller.forward(command)
+                    
+                    # 手动应用轮子动作
+                    articulation_controller = self.mobile_base.get_articulation_controller()
+                    if articulation_controller and len(wheel_actions) >= 2:
+                        num_dofs = len(self.mobile_base.dof_names) if hasattr(self.mobile_base, 'dof_names') else 10
+                        joint_velocities = np.zeros(num_dofs)
+                        
+                        # 假设前两个DOF是轮子
+                        if hasattr(self, 'wheel_joint_indices') and len(self.wheel_joint_indices) >= 2:
+                            joint_velocities[self.wheel_joint_indices[0]] = wheel_actions[0]
+                            joint_velocities[self.wheel_joint_indices[1]] = wheel_actions[1]
+                        else:
+                            # 备用：假设前两个是轮子关节
+                            joint_velocities[0] = wheel_actions[0]
+                            joint_velocities[1] = wheel_actions[1]
+                        
+                        action = ArticulationAction(joint_velocities=joint_velocities)
+                        articulation_controller.apply_action(action)
+                        return True
+                except Exception as e:
+                    print(f"方案3失败: {e}")
+            
+            print("所有移动命令方案都失败了")
             return False
                         
         except Exception as e:
@@ -817,56 +1278,13 @@ class OptimizedCreate3ArmSystem:
         except Exception as e:
             print(f"突破策略失败: {e}")
     
-    def create_trash_environment(self):
-        """创建优化的垃圾收集环境"""
-        print("🗑️ 创建优化垃圾收集环境...")
-        
-        # 创建小垃圾（合理距离）
-        small_trash_positions = [
-            [1.8, 0.0, 0.03],   # 正前方1.8米
-            [1.5, 1.2, 0.03],   # 右前方
-        ]
-        
-        for i, pos in enumerate(small_trash_positions):
-            trash = DynamicSphere(
-                prim_path=f"/World/small_trash_{i}",
-                name=f"small_trash_{i}",
-                position=np.array(pos),
-                radius=0.03,  # 3cm半径
-                color=np.array([1.0, 0.2, 0.2])
-            )
-            self.world.scene.add(trash)
-            self.small_trash_objects.append(trash)
-        
-        # 创建大垃圾（合理距离和尺寸）
-        large_trash_positions = [
-            [2.2, 0.0, 0.025],    # 正前方2.2米
-            [1.8, -1.5, 0.025],   # 左前方
-        ]
-        
-        for i, pos in enumerate(large_trash_positions):
-            trash = DynamicCuboid(
-                prim_path=f"/World/large_trash_{i}",
-                name=f"large_trash_{i}",
-                position=np.array(pos),
-                scale=np.array([0.05, 0.05, 0.05]),  # 5cm立方体
-                color=np.array([0.2, 0.8, 0.2])
-            )
-            self.world.scene.add(trash)
-            self.large_trash_objects.append(trash)
-        
-        print(f"✅ 优化垃圾环境创建完成:")
-        print(f"   - 小垃圾(球形，直径6cm): {len(self.small_trash_objects)}个，距离1.5-1.8米")
-        print(f"   - 大垃圾(立方体，5cm³): {len(self.large_trash_objects)}个，距离1.8-2.2米")
-        print(f"   - 夹爪开合范围: {self.gripper_open*1000:.0f}mm，能夹住50mm物体")
-    
     def precise_grasp_sequence(self, target_position):
         """精确抓取序列（高效版）"""
         try:
             print("   🎯 开始精确抓取序列...")
             
             self._stop_robot()
-            self._wait_for_stability(0.5)  # 减少等待时间
+            self._wait_for_stability(0.5)
             
             # 快速准备
             print("   1. 快速准备...")
@@ -992,14 +1410,14 @@ class OptimizedCreate3ArmSystem:
             print(f"收集大垃圾失败: {e}")
             return False
     
-    def run_collection_demo(self):
-        """运行高效垃圾收集演示"""
+    def run_indoor_cleanup_demo(self):
+        """运行室内清洁演示（尺寸修复版）"""
         print("\n" + "="*70)
-        print("🚀 CUDA加速优化版Create-3+机械臂垃圾收集系统演示")
-        print("智能导航 | A*路径规划 | 精确抓取")
+        print("🏠 CUDA加速优化版Create-3+机械臂室内清洁系统演示（尺寸修复版）")
+        print("智能导航 | A*路径规划 | 精确抓取 | 原始USD资产库 | 正确尺寸")
         print("="*70)
         
-        self._wait_for_stability(2.0)  # 减少等待时间
+        self._wait_for_stability(2.0)
         
         pos, _ = self.get_robot_pose()
         print(f"🔍 机器人初始位置: {pos}")
@@ -1011,7 +1429,6 @@ class OptimizedCreate3ArmSystem:
             if pose in self.arm_poses:
                 print(f"   快速测试 {pose} 姿态...")
                 self._move_arm_to_pose(pose)
-                # 不等待，直接继续
         
         self._move_arm_to_pose("home")
         
@@ -1024,7 +1441,7 @@ class OptimizedCreate3ArmSystem:
             print(f"\n📍 目标 {i+1}/{len(self.small_trash_objects)}: {trash.name}")
             if self.collect_small_trash(trash):
                 collection_success += 1
-            time.sleep(0.5)  # 减少等待时间
+            time.sleep(0.5)
         
         # 收集大垃圾
         print(f"\n🦾 开始智能收集大垃圾...")
@@ -1044,23 +1461,30 @@ class OptimizedCreate3ArmSystem:
         # 显示结果
         success_rate = (collection_success / total_items) * 100 if total_items > 0 else 0
         
-        print(f"\n📊 垃圾收集结果:")
+        print(f"\n📊 室内清洁结果:")
         print(f"   成功收集: {collection_success}/{total_items} ({success_rate:.1f}%)")
         print(f"   收集清单: {', '.join(self.collected_objects)}")
         
-        print(f"\n🚀 性能优化总结:")
+        print(f"\n🚀 系统配置总结（尺寸修复版）:")
         print("="*50)
         print("✅ CUDA GPU物理加速已启用")
         print("✅ A*路径规划智能导航")
+        print("✅ 原始USD资产库直接调用")
+        print("✅ 住宅家具场景完整")
+        print("✅ 多样化垃圾物品收集")
         print("✅ 高精度关节控制（1000Hz）")
         print("✅ 智能卡住检测和突破")
         print("✅ 高效机械臂控制")
         print("✅ 60FPS高帧率渲染")
-        print("✅ 优化物体尺寸匹配")
         print("✅ 85%抓取成功率")
+        print("🆕 尺寸问题修复：")
+        print(f"   - 家具缩放: {self.scale_config['furniture']} (3%)")
+        print(f"   - 小垃圾缩放: {self.scale_config['small_trash']} (100%)")
+        print(f"   - 大垃圾缩放: {self.scale_config['large_trash']} (80%)")
+        print(f"   - 书籍缩放: {self.scale_config['books']} (50%)")
         print("="*50)
         
-        print("\n✅ 高性能垃圾收集演示完成！")
+        print("\n✅ 高性能室内清洁演示完成（尺寸修复版）！")
     
     def _wait_for_stability(self, duration=1.0):
         """高效等待系统稳定"""
@@ -1081,11 +1505,20 @@ class OptimizedCreate3ArmSystem:
             print(f"清理时出错: {e}")
 
 def main():
-    """主函数"""
-    system = OptimizedCreate3ArmSystem()
+    """主函数（尺寸修复版）"""
+    system = OptimizedCreate3CleanupSystem()
     
     try:
-        print("🚀 启动CUDA加速优化版系统...")
+        print("🚀 启动CUDA加速优化版室内清洁系统（尺寸修复版）...")
+
+        # 可选：在初始化前调整缩放比例
+        # 如果家具还是太大，可以进一步缩小
+        system.adjust_scale_config(
+            furniture_scale=0.01,      # 更小的家具（2%）
+            small_trash_scale=0.01,     # 稍微缩小小垃圾
+            large_trash_scale=0.02,     # 更小的大垃圾
+            books_scale=0.01            # 更小的书籍
+         )
         
         # 高效初始化
         success = system.initialize_isaac_sim()
@@ -1099,19 +1532,30 @@ def main():
             print("❌ 机器人初始化失败")
             return
         
+        # 创建室内场景（使用正确尺寸）
+        success = system.create_indoor_scene()
+        if not success:
+            print("❌ 室内场景创建失败")
+            return
+        
         success = system.setup_post_load()
         if not success:
             print("❌ 后加载设置失败")
             return
         
-        system.create_trash_environment()
+        success = system.create_cleanup_environment()
+        if not success:
+            print("❌ 清洁环境创建失败")
+            return
+        
         system._wait_for_stability(2.0)
         
         # 运行高效演示
-        system.run_collection_demo()
+        system.run_indoor_cleanup_demo()
         
         # 保持系统运行
         print("\n💡 按 Ctrl+C 退出演示")
+        print("💡 如果尺寸还不合适，可以在代码中调整 scale_config 的值")
         try:
             while True:
                 system.world.step(render=True)
