@@ -1,24 +1,42 @@
 #!/usr/bin/env python3
 """
 CUDA加速优化版Create-3+机械臂垃圾收集系统（配置文件版）
-使用config.py进行参数管理，便于调试和修改
+使用config.py进行参数管理，支持多用户环境
 """
 
 from isaacsim import SimulationApp
 
 # 先导入配置，然后初始化仿真
 from config import CleanupSystemConfig, QuickConfigs
+import os
+
+# 获取用户名（支持多种方式）
+username = (
+    os.environ.get('CLEANUP_BENCH_USERNAME') or  # 从环境变量获取
+    os.environ.get('USER') or                    # Linux/macOS
+    os.environ.get('USERNAME') or                # Windows  
+    os.environ.get('LOGNAME') or                 # 备用
+    'user'                                       # 默认值
+)
+
+print(f"🔧 启动清洁系统，用户: {username}")
 
 # 根据需要选择配置
-# config = CleanupSystemConfig()                    # 默认配置
-# config = QuickConfigs.small_scene()              # 小场景配置
-# config = QuickConfigs.tiny_furniture()           # 超小家具配置
-# config = QuickConfigs.performance_optimized()    # 性能优化配置
-config = QuickConfigs.debug_mode()                 # 调试模式配置
+# config = CleanupSystemConfig(username)                    # 默认配置
+# config = QuickConfigs.small_scene(username)              # 小场景配置
+# config = QuickConfigs.tiny_furniture(username)           # 超小家具配置
+# config = QuickConfigs.performance_optimized(username)    # 性能优化配置
+config = QuickConfigs.debug_mode(username)                 # 调试模式配置
 
 # 可以在这里进一步自定义配置
 # config.update_scale(furniture=0.025, books=0.4)
 # config.add_furniture_position("new_table", 1.0, 1.0, 0.0, 45.0)
+
+# 如果需要手动设置路径（当自动检测失败时）
+# config.set_user_paths(
+#     isaac_assets_base=f"/home/{username}/isaacsim_assets/Assets/Isaac/4.5",
+#     isaac_sim_install=f"/home/{username}/isaacsim"
+# )
 
 # 使用配置初始化仿真应用
 simulation_app = SimulationApp({
