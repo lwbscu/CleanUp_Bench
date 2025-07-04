@@ -38,7 +38,7 @@ print_header() {
 # 获取脚本所在目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SCRIPTS_DIR="$SCRIPT_DIR/scripts"
-RESIDENTIAL_ASSETS="/home/lwb/isaacsim/extension_examples/CleanUp_Bench/Residential"
+RESIDENTIAL_ASSETS="/home/lwb/isaacsim_assets/Assets/Isaac/4.5/NVIDIA/Assets/ArchVis/Residential"
 ROBOT_USD="/home/lwb/isaacsim_assets/Assets/Isaac/4.5/Isaac/Robots/iRobot/create_3_with_arm.usd"
 
 print_header "CleanUp_Bench Create-3+机械臂室内清洁系统启动器"
