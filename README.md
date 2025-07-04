@@ -50,7 +50,7 @@ CleanUp_Bench/
 ### 步骤 1: 克隆项目
 
 ```bash
-git clone https://github.com/your-username/CleanUp_Bench.git
+git clone https://github.com/lwbscu/CleanUp_Bench.git
 cd CleanUp_Bench
 ```
 
