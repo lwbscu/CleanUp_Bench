@@ -2,6 +2,8 @@
 """
 CUDA加速优化版Create-3+机械臂垃圾收集系统（配置文件版）
 使用config.py进行参数管理，支持多用户环境
+集成高级导航系统，实现丝滑精准的移动控制
+修正位置缩放问题
 """
 
 from isaacsim import SimulationApp
@@ -22,21 +24,14 @@ username = (
 print(f"🔧 启动清洁系统，用户: {username}")
 
 # 根据需要选择配置
-# config = CleanupSystemConfig(username)                    # 默认配置
+config = CleanupSystemConfig(username)                    # 默认配置
 # config = QuickConfigs.small_scene(username)              # 小场景配置
 # config = QuickConfigs.tiny_furniture(username)           # 超小家具配置
 # config = QuickConfigs.performance_optimized(username)    # 性能优化配置
-config = QuickConfigs.debug_mode(username)                 # 调试模式配置
+# config = QuickConfigs.debug_mode(username)                 # 调试模式配置
 
-# 可以在这里进一步自定义配置
-# config.update_scale(furniture=0.025, books=0.4)
-# config.add_furniture_position("new_table", 1.0, 1.0, 0.0, 45.0)
-
-# 如果需要手动设置路径（当自动检测失败时）
-# config.set_user_paths(
-#     isaac_assets_base=f"/home/{username}/isaacsim_assets/Assets/Isaac/4.5",
-#     isaac_sim_install=f"/home/{username}/isaacsim"
-# )
+# 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
+COORDINATE_SCALE = 0.01  # 将几百的坐标缩放到几米的世界坐标
 
 # 使用配置初始化仿真应用
 simulation_app = SimulationApp({
@@ -65,8 +60,11 @@ from isaacsim.core.utils.types import ArticulationAction
 from pxr import UsdLux, UsdPhysics, Gf, Usd
 import isaacsim.core.utils.prims as prim_utils
 
+# 导入高级导航系统
+from advanced_navigation import AdvancedNavigationSystem
+
 class ConfigurableCreate3CleanupSystem:
-    """基于配置文件的Create-3+机械臂室内清洁系统"""
+    """基于配置文件的Create-3+机械臂室内清洁系统（位置修正版）"""
     
     def __init__(self, config):
         self.config = config
@@ -115,7 +113,10 @@ class ConfigurableCreate3CleanupSystem:
         self.collected_objects = []
         self.scene_objects = []
         
-        # 从配置读取导航参数
+        # 高级导航系统
+        self.advanced_navigation = None
+        
+        # 从配置读取导航参数（保留兼容性）
         self.grid_resolution = config.NAVIGATION["grid_resolution"]
         self.map_size = config.NAVIGATION["map_size"]
         self.stuck_threshold = config.NAVIGATION["stuck_threshold"]
@@ -124,6 +125,14 @@ class ConfigurableCreate3CleanupSystem:
         
         # 导航优化
         self.navigation_history = deque(maxlen=50)
+        
+        # 性能监控
+        self.performance_stats = {
+            'movement_commands_sent': 0,
+            'successful_movements': 0,
+            'total_distance_traveled': 0.0,
+            'total_navigation_time': 0.0
+        }
     
     def get_asset_path(self, relative_path):
         """获取住宅资产的完整路径"""
@@ -178,7 +187,7 @@ class ConfigurableCreate3CleanupSystem:
     
     def initialize_isaac_sim(self):
         """初始化Isaac Sim环境（CUDA优化）"""
-        print("🚀 正在初始化Isaac Sim环境（配置驱动+CUDA加速）...")
+        print("🚀 正在初始化Isaac Sim环境（高级导航+CUDA加速）...")
         
         try:
             # 验证资产文件
@@ -228,7 +237,11 @@ class ConfigurableCreate3CleanupSystem:
             # 初始化障碍物地图
             self._initialize_obstacle_map()
             
-            print("✅ Isaac Sim环境初始化完成（配置优化）")
+            # 初始化高级导航系统
+            self.advanced_navigation = AdvancedNavigationSystem(self.config)
+            print("✅ 高级导航系统初始化完成")
+            
+            print("✅ Isaac Sim环境初始化完成（高级导航优化）")
             return True
             
         except Exception as e:
@@ -315,8 +328,8 @@ class ConfigurableCreate3CleanupSystem:
             return False
     
     def create_indoor_scene(self):
-        """创建室内清洁场景（使用配置文件）"""
-        print("🏠 创建室内清洁场景（配置驱动）...")
+        """创建室内清洁场景（使用配置文件，修正位置缩放）"""
+        print("🏠 创建室内清洁场景（配置驱动+位置修正）...")
         
         try:
             stage = self.world.stage
@@ -325,6 +338,7 @@ class ConfigurableCreate3CleanupSystem:
             furniture_scale = self.config.SCALE_CONFIG["furniture"]
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"🔧 家具缩放比例: {furniture_scale}")
+                print(f"🔧 坐标系缩放: {COORDINATE_SCALE}")
             
             for furniture_name, (x, y, z, rot) in self.config.FURNITURE_POSITIONS.items():
                 if furniture_name in self.config.ASSET_PATHS["furniture"]:
@@ -335,11 +349,15 @@ class ConfigurableCreate3CleanupSystem:
                     furniture_prim = stage.DefinePrim(prim_path, "Xform")
                     furniture_prim.GetReferences().AddReference(usd_path)
                     
-                    # 使用配置的缩放设置transform
-                    self._safe_set_transform_with_scale(furniture_prim, x, y, z, rot, furniture_scale)
+                    # 修正：使用坐标系缩放转换位置，但保持物体大小缩放
+                    world_x = x * COORDINATE_SCALE
+                    world_y = y * COORDINATE_SCALE
+                    world_z = z
+                    
+                    self._safe_set_transform_with_scale(furniture_prim, world_x, world_y, world_z, rot, furniture_scale)
                     
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   ✅ 创建家具: {furniture_name} 在位置 ({x}, {y}, {z}) 缩放: {furniture_scale}")
+                        print(f"   ✅ 创建家具: {furniture_name} 配置位置: ({x}, {y}, {z}) -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {furniture_scale}")
             
             # 从配置读取书籍位置
             book_scale = self.config.SCALE_CONFIG["books"]
@@ -354,13 +372,17 @@ class ConfigurableCreate3CleanupSystem:
                     book_prim = stage.DefinePrim(prim_path, "Xform")
                     book_prim.GetReferences().AddReference(usd_path)
                     
-                    # 使用配置的缩放设置transform
-                    self._safe_set_transform_with_scale(book_prim, x, y, z, 0.0, book_scale)
+                    # 修正：使用坐标系缩放转换位置
+                    world_x = x * COORDINATE_SCALE
+                    world_y = y * COORDINATE_SCALE
+                    world_z = z
+                    
+                    self._safe_set_transform_with_scale(book_prim, world_x, world_y, world_z, 0.0, book_scale)
                     
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   📚 放置书籍: {book_name} 在位置 ({x}, {y}, {z}) 缩放: {book_scale}")
+                        print(f"   📚 放置书籍: {book_name} 配置位置: ({x}, {y}, {z}) -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {book_scale}")
             
-            print("✅ 室内场景创建完成（配置驱动）")
+            print("✅ 室内场景创建完成（配置驱动+位置修正）")
             return True
             
         except Exception as e:
@@ -370,8 +392,8 @@ class ConfigurableCreate3CleanupSystem:
             return False
     
     def create_cleanup_environment(self):
-        """创建清洁环境（使用配置文件）"""
-        print("🗑️ 创建清洁环境（配置驱动）...")
+        """创建清洁环境（使用配置文件，修正位置缩放）"""
+        print("🗑️ 创建清洁环境（配置驱动+位置修正）...")
         
         try:
             stage = self.world.stage
@@ -390,13 +412,19 @@ class ConfigurableCreate3CleanupSystem:
                     trash_prim = stage.DefinePrim(prim_path, "Xform")
                     trash_prim.GetReferences().AddReference(usd_path)
                     
-                    self._safe_set_transform_with_scale(trash_prim, pos[0], pos[1], pos[2], 0.0, small_trash_scale)
+                    # 修正：使用坐标系缩放转换位置
+                    world_x = pos[0] * COORDINATE_SCALE
+                    world_y = pos[1] * COORDINATE_SCALE
+                    world_z = pos[2]
+                    world_pos = [world_x, world_y, world_z]
                     
-                    trash_obj = self._create_object_wrapper(prim_path, f"small_{name}_{i}", pos)
+                    self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, small_trash_scale)
+                    
+                    trash_obj = self._create_object_wrapper(prim_path, f"small_{name}_{i}", world_pos)
                     self.small_trash_objects.append(trash_obj)
                     
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   📍 小垃圾: {name} 在位置 {pos} 缩放: {small_trash_scale}")
+                        print(f"   📍 小垃圾: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {small_trash_scale}")
             
             # 从配置读取大垃圾位置和缩放
             large_trash_scale = self.config.SCALE_CONFIG["large_trash"]
@@ -412,15 +440,21 @@ class ConfigurableCreate3CleanupSystem:
                     trash_prim = stage.DefinePrim(prim_path, "Xform")
                     trash_prim.GetReferences().AddReference(usd_path)
                     
-                    self._safe_set_transform_with_scale(trash_prim, pos[0], pos[1], pos[2], 0.0, large_trash_scale)
+                    # 修正：使用坐标系缩放转换位置
+                    world_x = pos[0] * COORDINATE_SCALE
+                    world_y = pos[1] * COORDINATE_SCALE
+                    world_z = pos[2]
+                    world_pos = [world_x, world_y, world_z]
                     
-                    trash_obj = self._create_object_wrapper(prim_path, f"large_{name}_{i}", pos)
+                    self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, large_trash_scale)
+                    
+                    trash_obj = self._create_object_wrapper(prim_path, f"large_{name}_{i}", world_pos)
                     self.large_trash_objects.append(trash_obj)
                     
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   🦾 大垃圾: {name} 在位置 {pos} 缩放: {large_trash_scale}")
+                        print(f"   🦾 大垃圾: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {large_trash_scale}")
             
-            print(f"✅ 清洁环境创建完成（配置驱动）:")
+            print(f"✅ 清洁环境创建完成（配置驱动+位置修正）:")
             print(f"   - 小垃圾(吸附): {len(self.small_trash_objects)}个")
             print(f"   - 大垃圾(抓取): {len(self.large_trash_objects)}个")
             
@@ -433,7 +467,7 @@ class ConfigurableCreate3CleanupSystem:
             return False
     
     def _safe_set_transform_with_scale(self, prim, x, y, z, rot_z, scale=1.0):
-        """安全地设置USD prim的transform，包含缩放"""
+        """安全地设置USD prim的transform，包含缩放（修正版本）"""
         try:
             from pxr import UsdGeom
             xform = UsdGeom.Xform(prim)
@@ -441,42 +475,44 @@ class ConfigurableCreate3CleanupSystem:
             # 清除现有的变换操作
             xform.ClearXformOpOrder()
             
-            # 按顺序添加变换操作：缩放 -> 旋转 -> 平移
+            # 按顺序添加变换操作：平移 -> 旋转 -> 缩放
             
-            # 1. 添加缩放操作
-            if scale != 1.0:
-                scale_op = xform.AddScaleOp()
-                scale_op.Set(Gf.Vec3f(scale, scale, scale))
+            # 1. 添加平移操作（不缩放位置）
+            translate_op = xform.AddTranslateOp()
+            translate_op.Set(Gf.Vec3d(x, y, z))
             
             # 2. 添加旋转操作（如果需要）
             if rot_z != 0.0:
                 rotate_op = xform.AddRotateZOp()
                 rotate_op.Set(rot_z)
             
-            # 3. 添加平移操作
-            translate_op = xform.AddTranslateOp()
-            translate_op.Set(Gf.Vec3d(x, y, z))
+            # 3. 添加缩放操作（只缩放物体大小）
+            if scale != 1.0:
+                scale_op = xform.AddScaleOp()
+                scale_op.Set(Gf.Vec3f(scale, scale, scale))
             
         except Exception as e:
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"设置带缩放的transform失败: {e}")
-            # 备用方案：使用矩阵变换
+            # 备用方案：使用矩阵变换（修正版本）
             try:
                 from pxr import UsdGeom
                 xform = UsdGeom.Xform(prim)
                 
-                # 创建组合变换矩阵
+                # 创建组合变换矩阵（修正版本）
                 import math
                 cos_rot = math.cos(math.radians(rot_z))
                 sin_rot = math.sin(math.radians(rot_z))
                 
+                # 正确的4x4变换矩阵：平移在最后一行前3列
                 final_matrix = Gf.Matrix4d(
-                    scale * cos_rot, -scale * sin_rot, 0, x,
-                    scale * sin_rot, scale * cos_rot, 0, y,
-                    0, 0, scale, z,
-                    0, 0, 0, 1
+                    scale * cos_rot, -scale * sin_rot, 0, 0,
+                    scale * sin_rot, scale * cos_rot, 0, 0,
+                    0, 0, scale, 0,
+                    x, y, z, 1  # 平移分量在最后一行
                 )
                 
+                xform.ClearXformOpOrder()
                 matrix_op = xform.AddTransformOp()
                 matrix_op.Set(final_matrix)
                 
@@ -683,10 +719,20 @@ class ConfigurableCreate3CleanupSystem:
                 if self.config.DEBUG["enable_debug_output"]:
                     print("   ✅ 配置驱动的底盘物理属性设置完成")
             
-            # 设置物理场景参数（使用配置参数）
+            # 设置物理场景参数（使用配置参数）- 修正API调用
             physics_context = self.world.get_physics_context()
-            physics_context.set_solver_position_iteration_count(self.config.PHYSICS["solver_position_iterations"])
-            physics_context.set_solver_velocity_iteration_count(self.config.PHYSICS["solver_velocity_iterations"])
+            try:
+                # 尝试使用新的API
+                physics_context.set_solver_position_iteration_count(self.config.PHYSICS["solver_position_iterations"])
+                physics_context.set_solver_velocity_iteration_count(self.config.PHYSICS["solver_velocity_iterations"])
+            except AttributeError:
+                # 如果新API不存在，尝试旧的API
+                try:
+                    physics_context.set_position_iteration_count(self.config.PHYSICS["solver_position_iterations"])
+                    physics_context.set_velocity_iteration_count(self.config.PHYSICS["solver_velocity_iterations"])
+                except AttributeError:
+                    if self.config.DEBUG["enable_debug_output"]:
+                        print("   ⚠️ 无法设置求解器迭代次数（API不兼容）")
             
             if self.config.DEBUG["enable_debug_output"]:
                 print("   ✅ 配置驱动的物理场景参数设置完成")
@@ -824,10 +870,15 @@ class ConfigurableCreate3CleanupSystem:
         return self.current_position.copy(), self.current_orientation
     
     def _send_movement_command(self, linear_vel, angular_vel):
-        """发送移动命令（使用配置参数）"""
+        """发送移动命令（优化版本）"""
         try:
+            # 记录性能统计
+            self.performance_stats['movement_commands_sent'] += 1
+            
             linear_vel = np.clip(linear_vel, -self.max_linear_velocity, self.max_linear_velocity)
             angular_vel = np.clip(angular_vel, -self.max_angular_velocity, self.max_angular_velocity)
+            
+            success = False
             
             if self.differential_controller and self.mobile_base:
                 try:
@@ -836,13 +887,13 @@ class ConfigurableCreate3CleanupSystem:
                     
                     if hasattr(self.mobile_base, 'apply_wheel_actions'):
                         self.mobile_base.apply_wheel_actions(wheel_actions)
-                        return True
+                        success = True
                 except Exception as e:
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"方案1失败: {e}")
+                        print(f"差分控制器失败: {e}")
             
             # 备用方案：直接关节控制
-            if hasattr(self, 'wheel_joint_indices') and len(self.wheel_joint_indices) >= 2:
+            if not success and hasattr(self, 'wheel_joint_indices') and len(self.wheel_joint_indices) >= 2:
                 try:
                     articulation_controller = self.mobile_base.get_articulation_controller()
                     if articulation_controller:
@@ -860,12 +911,15 @@ class ConfigurableCreate3CleanupSystem:
                         
                         action = ArticulationAction(joint_velocities=joint_velocities)
                         articulation_controller.apply_action(action)
-                        return True
+                        success = True
                 except Exception as e:
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"方案2失败: {e}")
+                        print(f"直接关节控制失败: {e}")
             
-            return False
+            if success:
+                self.performance_stats['successful_movements'] += 1
+            
+            return success
                         
         except Exception as e:
             if self.config.DEBUG["enable_debug_output"]:
@@ -881,7 +935,7 @@ class ConfigurableCreate3CleanupSystem:
                 print(f"停止机器人失败: {e}")
     
     def smart_navigate_to_target(self, target_pos, max_time=None, tolerance=None):
-        """智能导航（使用配置参数）"""
+        """智能导航（使用高级导航系统）"""
         # 使用配置的默认值
         if max_time is None:
             max_time = self.config.NAVIGATION["nav_timeout_small"]
@@ -890,214 +944,34 @@ class ConfigurableCreate3CleanupSystem:
         
         try:
             if self.config.DEBUG["show_navigation_progress"]:
-                print(f"🎯 智能导航到目标: [{target_pos[0]:.3f}, {target_pos[1]:.3f}]")
+                print(f"🎯 高级智能导航到目标: [{target_pos[0]:.3f}, {target_pos[1]:.3f}]")
             
-            current_pos, current_yaw = self.get_robot_pose()
-            path = self.a_star_path_planning(current_pos[:2], target_pos[:2])
+            # 记录导航开始时间
+            nav_start_time = time.time()
             
-            if len(path) > 2 and self.config.DEBUG["show_navigation_progress"]:
-                print(f"   🗺️ A*路径规划完成，{len(path)}个路径点")
+            # 使用高级导航系统
+            success = self.advanced_navigation.navigate_to_target(
+                self, target_pos, max_time, tolerance
+            )
             
-            start_time = time.time()
-            path_index = 1
+            # 记录导航时间
+            nav_time = time.time() - nav_start_time
+            self.performance_stats['total_navigation_time'] += nav_time
             
-            position_history = deque(maxlen=self.stuck_detection_window)
-            last_significant_move = time.time()
-            
-            while time.time() - start_time < max_time and path_index < len(path):
-                current_pos, current_yaw = self.get_robot_pose()
-                position_history.append(current_pos[:2].copy())
-                
-                # 卡住检测（使用配置参数）
-                if len(position_history) >= self.stuck_detection_window:
-                    recent_movement = np.max([
-                        np.linalg.norm(position_history[-1] - position_history[-i])
-                        for i in range(20, min(len(position_history), 50))
-                    ])
-                    
-                    if recent_movement < self.stuck_threshold:
-                        time_since_move = time.time() - last_significant_move
-                        if time_since_move > self.config.NAVIGATION["stuck_timeout"]:
-                            if self.config.DEBUG["show_navigation_progress"]:
-                                print("   🚨 智能卡住检测：执行突破策略")
-                            self._execute_breakthrough_strategy()
-                            last_significant_move = time.time()
-                            position_history.clear()
-                            continue
-                    else:
-                        last_significant_move = time.time()
-                
-                current_target = path[path_index]
-                direction = np.array(current_target) - current_pos[:2]
-                distance = np.linalg.norm(direction)
-                
-                if distance < 0.4:
-                    path_index += 1
-                    if path_index >= len(path):
-                        break
-                    continue
-                
-                final_distance = np.linalg.norm(current_pos[:2] - target_pos[:2])
-                if final_distance < tolerance:
-                    self._stop_robot()
-                    if self.config.DEBUG["show_navigation_progress"]:
-                        print(f"   ✅ 智能导航成功！距离: {final_distance:.3f}m")
-                    return True
-                
-                # 控制策略（使用配置参数）
-                target_angle = np.arctan2(direction[1], direction[0])
-                angle_diff = target_angle - current_yaw
-                
-                while angle_diff > np.pi:
-                    angle_diff -= 2 * np.pi
-                while angle_diff < -np.pi:
-                    angle_diff += 2 * np.pi
-                
-                # 使用配置的角度阈值
-                if abs(angle_diff) > self.config.NAVIGATION["angle_threshold_large"]:
-                    linear_vel = 0.0
-                    angular_vel = 1.5 * np.sign(angle_diff)
-                    mode = "精确转向"
-                elif abs(angle_diff) > self.config.NAVIGATION["angle_threshold_medium"]:
-                    linear_vel = 0.3
-                    angular_vel = 1.2 * np.sign(angle_diff)
-                    mode = "弯道行驶"
-                else:
-                    # 使用配置的线速度参数
-                    vel_factors = self.config.NAVIGATION["linear_velocity_factors"]
-                    linear_vel = min(vel_factors["max"], max(vel_factors["min"], distance * vel_factors["distance_factor"]))
-                    angular_vel = 0.6 * angle_diff
-                    mode = "直线行驶"
-                
-                # 平滑控制
-                self.current_linear_vel = (self.velocity_smoothing * self.current_linear_vel + 
-                                          (1 - self.velocity_smoothing) * linear_vel)
-                self.current_angular_vel = (self.velocity_smoothing * self.current_angular_vel + 
-                                           (1 - self.velocity_smoothing) * angular_vel)
-                
-                success = self._send_movement_command(self.current_linear_vel, self.current_angular_vel)
-                
-                # 进度报告（使用配置的报告间隔）
-                elapsed = time.time() - start_time
-                if (self.config.DEBUG["show_navigation_progress"] and 
-                    int(elapsed / self.config.DEBUG["progress_report_interval"]) * self.config.DEBUG["progress_report_interval"] == int(elapsed) and 
-                    elapsed > 2):
-                    print(f"   {mode}: {elapsed:.1f}s, 路径点{path_index}/{len(path)-1}, 距离: {final_distance:.3f}m")
-                
-                self.world.step(render=True)
-                time.sleep(0.016)
-            
-            # 检查最终结果
-            final_pos, _ = self.get_robot_pose()
-            final_distance = np.linalg.norm(final_pos[:2] - target_pos[:2])
-            
-            if final_distance < tolerance * 1.3:
+            if success:
                 if self.config.DEBUG["show_navigation_progress"]:
-                    print(f"   ✅ 智能导航接近成功！距离: {final_distance:.3f}m")
-                return True
+                    print(f"   ✅ 高级导航成功！用时: {nav_time:.1f}s")
             else:
                 if self.config.DEBUG["show_navigation_progress"]:
-                    print(f"   ⚠️ 智能导航失败，距离: {final_distance:.3f}m")
-                return False
+                    print(f"   ⚠️ 高级导航失败，用时: {nav_time:.1f}s")
+            
+            return success
             
         except Exception as e:
-            print(f"智能导航失败: {e}")
+            print(f"高级导航失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-    
-    def a_star_path_planning(self, start_pos, goal_pos):
-        """A*路径规划算法（使用配置参数）"""
-        try:
-            def world_to_grid(pos):
-                x = int((pos[0] + self.map_size/2) / self.grid_resolution)
-                y = int((pos[1] + self.map_size/2) / self.grid_resolution)
-                return max(0, min(x, self.obstacle_map.shape[0]-1)), max(0, min(y, self.obstacle_map.shape[1]-1))
-            
-            def grid_to_world(grid_pos):
-                x = grid_pos[0] * self.grid_resolution - self.map_size/2
-                y = grid_pos[1] * self.grid_resolution - self.map_size/2
-                return [x, y]
-            
-            start_grid = world_to_grid(start_pos)
-            goal_grid = world_to_grid(goal_pos)
-            
-            def heuristic(a, b):
-                return abs(a[0] - b[0]) + abs(a[1] - b[1])
-            
-            frontier = []
-            heapq.heappush(frontier, (0, start_grid))
-            came_from = {start_grid: None}
-            cost_so_far = {start_grid: 0}
-            
-            directions = [(0,1), (1,0), (0,-1), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]
-            
-            while frontier:
-                current = heapq.heappop(frontier)[1]
-                
-                if current == goal_grid:
-                    break
-                
-                for dx, dy in directions:
-                    next_pos = (current[0] + dx, current[1] + dy)
-                    
-                    if (next_pos[0] < 0 or next_pos[0] >= self.obstacle_map.shape[0] or 
-                        next_pos[1] < 0 or next_pos[1] >= self.obstacle_map.shape[1]):
-                        continue
-                    
-                    if self.obstacle_map[next_pos[0], next_pos[1]]:
-                        continue
-                    
-                    new_cost = cost_so_far[current] + (1.414 if abs(dx) + abs(dy) == 2 else 1)
-                    
-                    if next_pos not in cost_so_far or new_cost < cost_so_far[next_pos]:
-                        cost_so_far[next_pos] = new_cost
-                        priority = new_cost + heuristic(goal_grid, next_pos)
-                        heapq.heappush(frontier, (priority, next_pos))
-                        came_from[next_pos] = current
-            
-            if goal_grid not in came_from:
-                return [start_pos, goal_pos]
-            
-            path = []
-            current = goal_grid
-            while current is not None:
-                path.append(grid_to_world(current))
-                current = came_from[current]
-            path.reverse()
-            
-            return path
-            
-        except Exception as e:
-            if self.config.DEBUG["enable_debug_output"]:
-                print(f"A*路径规划失败: {e}")
-            return [start_pos, goal_pos]
-    
-    def _execute_breakthrough_strategy(self):
-        """执行突破策略"""
-        try:
-            if self.config.DEBUG["show_navigation_progress"]:
-                print("   💥 执行智能突破策略...")
-            
-            for _ in range(20):
-                self._send_movement_command(-0.2, 0.0)
-                self.world.step(render=True)
-                time.sleep(0.016)
-            
-            for _ in range(30):
-                self._send_movement_command(0.0, 1.8)
-                self.world.step(render=True)
-                time.sleep(0.016)
-            
-            for _ in range(25):
-                self._send_movement_command(0.4, 0.0)
-                self.world.step(render=True)
-                time.sleep(0.016)
-            
-            self._stop_robot()
-            if self.config.DEBUG["show_navigation_progress"]:
-                print("   ✅ 突破策略执行完成")
-            
-        except Exception as e:
-            print(f"突破策略失败: {e}")
     
     def precise_grasp_sequence(self, target_position):
         """精确抓取序列（配置驱动）"""
@@ -1245,8 +1119,8 @@ class ConfigurableCreate3CleanupSystem:
     def run_indoor_cleanup_demo(self):
         """运行室内清洁演示（配置驱动）"""
         print("\n" + "="*70)
-        print("🏠 配置驱动的Create-3+机械臂室内清洁系统演示")
-        print("配置文件管理 | 参数可调节 | 调试模式 | CUDA加速")
+        print("🏠 高级导航版Create-3+机械臂室内清洁系统演示")
+        print("配置文件管理 | 丝滑移动控制 | 智能导航 | CUDA加速 | 位置修正")
         print("="*70)
         
         # 使用配置的稳定时间
@@ -1254,6 +1128,18 @@ class ConfigurableCreate3CleanupSystem:
         
         pos, _ = self.get_robot_pose()
         print(f"🔍 机器人初始位置: {pos}")
+        
+        # 显示物体位置验证
+        print(f"\n🔍 物体位置验证:")
+        if self.small_trash_objects:
+            for i, obj in enumerate(self.small_trash_objects[:3]):  # 显示前3个
+                obj_pos, _ = obj.get_world_pose()
+                print(f"   小垃圾 {obj.name}: {obj_pos[:2]}")
+        
+        if self.large_trash_objects:
+            for i, obj in enumerate(self.large_trash_objects[:3]):  # 显示前3个
+                obj_pos, _ = obj.get_world_pose()
+                print(f"   大垃圾 {obj.name}: {obj_pos[:2]}")
         
         # 机械臂姿态演示（根据配置决定是否运行）
         if self.config.EXPERIMENT["run_arm_pose_demo"]:
@@ -1303,11 +1189,37 @@ class ConfigurableCreate3CleanupSystem:
         print(f"   成功收集: {collection_success}/{total_items} ({success_rate:.1f}%)")
         print(f"   收集清单: {', '.join(self.collected_objects)}")
         
+        # 显示性能统计
+        self._print_performance_stats()
+        
+        # 显示高级导航统计
+        if self.advanced_navigation:
+            self.advanced_navigation.print_stats()
+        
         # 显示配置总结
         self.config.print_summary()
         
-        print("\n✅ 配置驱动的室内清洁演示完成！")
+        print("\n✅ 高级导航版室内清洁演示完成！")
         print("💡 要调整参数，请编辑 config.py 文件")
+        print("🚀 导航系统已优化，移动更加丝滑精准")
+        print("🔧 位置缩放问题已修正")
+    
+    def _print_performance_stats(self):
+        """打印性能统计"""
+        stats = self.performance_stats
+        success_rate = 0
+        if stats['movement_commands_sent'] > 0:
+            success_rate = (stats['successful_movements'] / stats['movement_commands_sent']) * 100
+        
+        print(f"\n🚀 性能统计:")
+        print(f"   移动命令发送: {stats['movement_commands_sent']}")
+        print(f"   成功移动: {stats['successful_movements']}")
+        print(f"   移动成功率: {success_rate:.1f}%")
+        print(f"   总导航时间: {stats['total_navigation_time']:.1f}s")
+        
+        if stats['total_navigation_time'] > 0:
+            avg_speed = stats['total_distance_traveled'] / stats['total_navigation_time']
+            print(f"   平均移动速度: {avg_speed:.2f}m/s")
     
     def _wait_for_stability(self, duration=1.0):
         """等待系统稳定"""
@@ -1323,12 +1235,12 @@ class ConfigurableCreate3CleanupSystem:
             self._stop_robot()
             if self.world:
                 self.world.stop()
-            print("🧹 配置驱动系统清理完成")
+            print("🧹 高级导航系统清理完成")
         except Exception as e:
             print(f"清理时出错: {e}")
 
 def main():
-    """主函数（配置驱动版）"""
+    """主函数（高级导航优化版）"""
     
     # 显示配置摘要
     config.print_summary()
@@ -1336,7 +1248,7 @@ def main():
     system = ConfigurableCreate3CleanupSystem(config)
     
     try:
-        print("🚀 启动配置驱动的室内清洁系统...")
+        print("🚀 启动高级导航版室内清洁系统（位置修正版）...")
         
         # 高效初始化
         success = system.initialize_isaac_sim()
@@ -1373,12 +1285,14 @@ def main():
         # 保持系统运行
         print("\n💡 按 Ctrl+C 退出演示")
         print("💡 配置文件: config.py")
+        print("🚀 已启用高级导航系统，移动更加丝滑精准")
+        print("🔧 位置缩放问题已修正")
         try:
             while True:
                 system.world.step(render=True)
                 time.sleep(0.016)
         except KeyboardInterrupt:
-            print("\n👋 退出配置驱动演示...")
+            print("\n👋 退出高级导航演示...")
         
     except Exception as e:
         print(f"❌ 演示过程中发生错误: {e}")

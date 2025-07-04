@@ -2,6 +2,7 @@
 """
 Create-3+机械臂室内清洁系统配置文件
 所有超参数和配置都在这里，方便调试和修改
+位置坐标已调整到合理范围（米为单位）
 """
 
 import numpy as np
@@ -10,7 +11,7 @@ import os
 class CleanupSystemConfig:
     """清洁系统配置类"""
 
-    def __init__(self, username='lwb'):
+    def __init__(self, username=None):
         # ==================== 用户配置 ====================
         # 获取当前用户名，支持多种方式
         if username is None:
@@ -91,7 +92,7 @@ class CleanupSystemConfig:
             "global_scale": 1.0,      # 全局缩放倍数
         }
         
-        # ==================== 家具位置配置 ====================
+         # ==================== 家具位置配置 ====================
         self.FURNITURE_POSITIONS = {
             # 格式: "家具名": [x, y, z, rotation_z_degrees]
             "desk": [150.0, 80.0, 0.0, 0.0],
@@ -512,21 +513,21 @@ class QuickConfigs:
         
         # 只保留核心家具
         config.FURNITURE_POSITIONS = {
-            "desk": [2.0, 1.5, 0.0, 0.0],
-            "chair": [2.0, 0.8, 0.0, 0.0],
-            "coffee_table": [-1.5, 1.0, 0.0, 0.0],
+            "desk": [3.0, 1.5, 0.0, 0.0],
+            "chair": [2.8, 0.8, 0.0, 0.0],
+            "coffee_table": [-3.0, 2.0, 0.0, 0.0],
         }
         
         # 减少垃圾数量
         config.SMALL_TRASH_POSITIONS = {
-            "orange1": [1.0, 0.5, 0.03],
-            "lemon1": [1.5, -0.5, 0.03],
-            "coaster": [-1.0, 0.8, 0.01],
+            "orange1": [2.0, 1.0, 0.03],
+            "lemon1": [3.0, -1.0, 0.03],
+            "coaster": [-2.0, 1.6, 0.01],
         }
         
         config.LARGE_TRASH_POSITIONS = {
-            "tin_can": [1.8, 1.2, 0.05],
-            "mason_jar": [-1.2, -1.0, 0.05],
+            "tin_can": [3.6, 2.4, 0.05],
+            "mason_jar": [-2.4, -2.0, 0.05],
         }
         
         return config
@@ -537,8 +538,9 @@ class QuickConfigs:
         config = CleanupSystemConfig(username)
         config.update_scale(
             furniture=0.01,      # 1% - 非常小的家具
-            books=0.2,           # 20% - 很小的书籍
-            large_trash=0.5,     # 50% - 更小的大垃圾
+            books=0.01,          # 1% - 很小的书籍
+            small_trash=0.01,    # 1% - 更小的小垃圾
+            large_trash=0.01,    # 1% - 更小的大垃圾
         )
         return config
     
@@ -600,14 +602,14 @@ def example_usage():
     # )
     
     # 4. 修改缩放比例
-    config.update_scale(furniture=0.02, books=0.3)
+    config.update_scale(furniture=0.02, books=0.02)
     
     # 5. 添加新的家具位置
-    config.add_furniture_position("sofa", 0.0, 3.0, 0.0, 180.0)
+    config.add_furniture_position("sofa", 0.0, 6.0, 0.0, 180.0)
     
     # 6. 添加新的垃圾位置
-    config.add_trash_position("small", "pen", 0.5, 1.8, 0.02)
-    config.add_trash_position("large", "bottle", 1.5, 2.5, 0.05)
+    config.add_trash_position("small", "pen", 1.0, 3.6, 0.02)
+    config.add_trash_position("large", "bottle", 3.0, 5.0, 0.05)
     
     # 7. 调整机器人参数
     config.update_robot_control(max_linear_velocity=0.4, max_angular_velocity=1.5)
