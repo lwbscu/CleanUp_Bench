@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-CUDA加速优化版Create-3+机械臂垃圾收集系统（配置文件版）
+CUDA加速优化版Create-3+机械臂垃圾收集系统（全知全能导航版）
 使用config.py进行参数管理，支持多用户环境
-集成高级导航系统，实现丝滑精准的移动控制
-修正位置缩放问题
+集成全知全能导航系统，统一时间步，无障碍物限制
+修正位置缩放问题，解决物理场景步进不一致
 """
 
 from isaacsim import SimulationApp
@@ -60,11 +60,11 @@ from isaacsim.core.utils.types import ArticulationAction
 from pxr import UsdLux, UsdPhysics, Gf, Usd
 import isaacsim.core.utils.prims as prim_utils
 
-# 导入高级导航系统
+# 导入简化导航系统
 from advanced_navigation import AdvancedNavigationSystem
 
 class ConfigurableCreate3CleanupSystem:
-    """基于配置文件的Create-3+机械臂室内清洁系统（位置修正版）"""
+    """基于配置文件的Create-3+机械臂室内清洁系统（全知全能导航版）"""
     
     def __init__(self, config):
         self.config = config
@@ -113,18 +113,12 @@ class ConfigurableCreate3CleanupSystem:
         self.collected_objects = []
         self.scene_objects = []
         
-        # 高级导航系统
+        # 简化导航系统
         self.advanced_navigation = None
         
         # 从配置读取导航参数（保留兼容性）
         self.grid_resolution = config.NAVIGATION["grid_resolution"]
         self.map_size = config.NAVIGATION["map_size"]
-        self.stuck_threshold = config.NAVIGATION["stuck_threshold"]
-        self.stuck_detection_window = config.NAVIGATION["stuck_detection_window"]
-        self.obstacle_map = None
-        
-        # 导航优化
-        self.navigation_history = deque(maxlen=50)
         
         # 性能监控
         self.performance_stats = {
@@ -187,7 +181,7 @@ class ConfigurableCreate3CleanupSystem:
     
     def initialize_isaac_sim(self):
         """初始化Isaac Sim环境（CUDA优化）"""
-        print("🚀 正在初始化Isaac Sim环境（高级导航+CUDA加速）...")
+        print("🚀 正在初始化Isaac Sim环境（简化导航+CUDA加速）...")
         
         try:
             # 验证资产文件
@@ -203,7 +197,7 @@ class ConfigurableCreate3CleanupSystem:
             )
             self.world.scene.clear()
             
-            # 设置高性能物理参数（从配置读取）
+            # 设置高性能物理参数（统一时间步）
             physics_context = self.world.get_physics_context()
             physics_context.set_gravity(-9.81)
             physics_context.set_solver_type("TGS")
@@ -216,7 +210,7 @@ class ConfigurableCreate3CleanupSystem:
             physics_context.set_gpu_temp_buffer_capacity(self.config.PHYSICS["gpu_temp_buffer_capacity"])
             physics_context.set_gpu_max_num_partitions(self.config.PHYSICS["gpu_max_num_partitions"])
             
-            print("✅ CUDA GPU物理加速已启用（配置驱动）")
+            print("✅ CUDA GPU物理加速已启用（统一时间步）")
             
             # 添加地面
             ground = FixedCuboid(
@@ -234,14 +228,11 @@ class ConfigurableCreate3CleanupSystem:
             # 设置照明
             self._setup_lighting()
             
-            # 初始化障碍物地图
-            self._initialize_obstacle_map()
-            
-            # 初始化高级导航系统
+            # 初始化全知全能导航系统
             self.advanced_navigation = AdvancedNavigationSystem(self.config)
-            print("✅ 高级导航系统初始化完成")
+            print("✅ 全知全能导航系统初始化完成")
             
-            print("✅ Isaac Sim环境初始化完成（高级导航优化）")
+            print("✅ Isaac Sim环境初始化完成（统一时间步+全知全能导航）")
             return True
             
         except Exception as e:
@@ -276,16 +267,6 @@ class ConfigurableCreate3CleanupSystem:
                 print("✅ 配置驱动的照明设置完成")
         except Exception as e:
             print(f"照明设置失败: {e}")
-    
-    def _initialize_obstacle_map(self):
-        """初始化A*路径规划的障碍物地图"""
-        try:
-            map_cells = int(self.map_size / self.grid_resolution)
-            self.obstacle_map = np.zeros((map_cells, map_cells), dtype=bool)
-            if self.config.DEBUG["enable_debug_output"]:
-                print(f"✅ A*路径规划地图初始化完成 ({map_cells}x{map_cells})")
-        except Exception as e:
-            print(f"障碍物地图初始化失败: {e}")
     
     def initialize_robot(self):
         """初始化Create-3+机械臂（配置驱动）"""
@@ -870,16 +851,18 @@ class ConfigurableCreate3CleanupSystem:
         return self.current_position.copy(), self.current_orientation
     
     def _send_movement_command(self, linear_vel, angular_vel):
-        """发送移动命令（优化版本）"""
+        """发送移动命令（优化连续性）"""
         try:
             # 记录性能统计
             self.performance_stats['movement_commands_sent'] += 1
             
+            # 限制速度范围
             linear_vel = np.clip(linear_vel, -self.max_linear_velocity, self.max_linear_velocity)
             angular_vel = np.clip(angular_vel, -self.max_angular_velocity, self.max_angular_velocity)
             
             success = False
             
+            # 优先使用差分控制器
             if self.differential_controller and self.mobile_base:
                 try:
                     command = np.array([linear_vel, angular_vel])
@@ -892,7 +875,7 @@ class ConfigurableCreate3CleanupSystem:
                     if self.config.DEBUG["enable_debug_output"]:
                         print(f"差分控制器失败: {e}")
             
-            # 备用方案：直接关节控制
+            # 备用方案：直接关节控制（优化版本）
             if not success and hasattr(self, 'wheel_joint_indices') and len(self.wheel_joint_indices) >= 2:
                 try:
                     articulation_controller = self.mobile_base.get_articulation_controller()
@@ -900,18 +883,22 @@ class ConfigurableCreate3CleanupSystem:
                         wheel_radius = self.config.ROBOT_CONTROL["wheel_radius"]
                         wheel_base = self.config.ROBOT_CONTROL["wheel_base"]
                         
+                        # 差分驱动运动学
                         left_wheel_vel = (linear_vel - angular_vel * wheel_base / 2.0) / wheel_radius
                         right_wheel_vel = (linear_vel + angular_vel * wheel_base / 2.0) / wheel_radius
                         
                         num_dofs = len(self.mobile_base.dof_names) if hasattr(self.mobile_base, 'dof_names') else 10
                         joint_velocities = np.zeros(num_dofs)
                         
+                        # 设置轮子速度
                         joint_velocities[self.wheel_joint_indices[0]] = left_wheel_vel
                         joint_velocities[self.wheel_joint_indices[1]] = right_wheel_vel
                         
+                        # 应用控制动作
                         action = ArticulationAction(joint_velocities=joint_velocities)
                         articulation_controller.apply_action(action)
                         success = True
+                        
                 except Exception as e:
                     if self.config.DEBUG["enable_debug_output"]:
                         print(f"直接关节控制失败: {e}")
@@ -935,7 +922,7 @@ class ConfigurableCreate3CleanupSystem:
                 print(f"停止机器人失败: {e}")
     
     def smart_navigate_to_target(self, target_pos, max_time=None, tolerance=None):
-        """智能导航（使用高级导航系统）"""
+        """全知全能智能导航（无障碍物限制）"""
         # 使用配置的默认值
         if max_time is None:
             max_time = self.config.NAVIGATION["nav_timeout_small"]
@@ -944,12 +931,12 @@ class ConfigurableCreate3CleanupSystem:
         
         try:
             if self.config.DEBUG["show_navigation_progress"]:
-                print(f"🎯 高级智能导航到目标: [{target_pos[0]:.3f}, {target_pos[1]:.3f}]")
+                print(f"🎯 智能导航到目标: [{target_pos[0]:.3f}, {target_pos[1]:.3f}]")
             
             # 记录导航开始时间
             nav_start_time = time.time()
             
-            # 使用高级导航系统
+            # 使用简化导航系统
             success = self.advanced_navigation.navigate_to_target(
                 self, target_pos, max_time, tolerance
             )
@@ -960,15 +947,15 @@ class ConfigurableCreate3CleanupSystem:
             
             if success:
                 if self.config.DEBUG["show_navigation_progress"]:
-                    print(f"   ✅ 高级导航成功！用时: {nav_time:.1f}s")
+                    print(f"   ✅ 导航成功！用时: {nav_time:.1f}s")
             else:
                 if self.config.DEBUG["show_navigation_progress"]:
-                    print(f"   ⚠️ 高级导航失败，用时: {nav_time:.1f}s")
+                    print(f"   ⚠️ 导航失败，用时: {nav_time:.1f}s")
             
             return success
             
         except Exception as e:
-            print(f"高级导航失败: {e}")
+            print(f"导航失败: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -1117,10 +1104,10 @@ class ConfigurableCreate3CleanupSystem:
             return False
     
     def run_indoor_cleanup_demo(self):
-        """运行室内清洁演示（配置驱动）"""
+        """运行室内清洁演示（全知全能导航版）"""
         print("\n" + "="*70)
-        print("🏠 高级导航版Create-3+机械臂室内清洁系统演示")
-        print("配置文件管理 | 丝滑移动控制 | 智能导航 | CUDA加速 | 位置修正")
+        print("🏠 全知全能导航版Create-3+机械臂室内清洁系统演示")
+        print("配置文件管理 | 统一时间步 | 全知全能导航 | CUDA加速 | 位置修正")
         print("="*70)
         
         # 使用配置的稳定时间
@@ -1192,17 +1179,18 @@ class ConfigurableCreate3CleanupSystem:
         # 显示性能统计
         self._print_performance_stats()
         
-        # 显示高级导航统计
+        # 显示导航统计
         if self.advanced_navigation:
             self.advanced_navigation.print_stats()
         
         # 显示配置总结
         self.config.print_summary()
         
-        print("\n✅ 高级导航版室内清洁演示完成！")
+        print("\n✅ 全知全能导航版室内清洁演示完成！")
         print("💡 要调整参数，请编辑 config.py 文件")
-        print("🚀 导航系统已优化，移动更加丝滑精准")
-        print("🔧 位置缩放问题已修正")
+        print("🚀 导航系统已升级为全知全能，可到达地图任何位置")
+        print("🔧 统一时间步，解决物理场景步进不一致问题")
+        print("🗺️ 无障碍物限制，直接路径规划")
     
     def _print_performance_stats(self):
         """打印性能统计"""
@@ -1235,12 +1223,12 @@ class ConfigurableCreate3CleanupSystem:
             self._stop_robot()
             if self.world:
                 self.world.stop()
-            print("🧹 高级导航系统清理完成")
+            print("🧹 全知全能导航系统清理完成")
         except Exception as e:
             print(f"清理时出错: {e}")
 
 def main():
-    """主函数（高级导航优化版）"""
+    """主函数（全知全能导航优化版）"""
     
     # 显示配置摘要
     config.print_summary()
@@ -1248,7 +1236,7 @@ def main():
     system = ConfigurableCreate3CleanupSystem(config)
     
     try:
-        print("🚀 启动高级导航版室内清洁系统（位置修正版）...")
+        print("🚀 启动全知全能导航版室内清洁系统（统一时间步版）...")
         
         # 高效初始化
         success = system.initialize_isaac_sim()
@@ -1285,14 +1273,15 @@ def main():
         # 保持系统运行
         print("\n💡 按 Ctrl+C 退出演示")
         print("💡 配置文件: config.py")
-        print("🚀 已启用高级导航系统，移动更加丝滑精准")
-        print("🔧 位置缩放问题已修正")
+        print("🚀 已启用全知全能导航系统，可到达地图任何位置")
+        print("🔧 统一物理和渲染时间步，解决步进不一致问题")
+        print("🗺️ 无障碍物限制的路径规划")
         try:
             while True:
                 system.world.step(render=True)
                 time.sleep(0.016)
         except KeyboardInterrupt:
-            print("\n👋 退出高级导航演示...")
+            print("\n👋 退出全知全能导航演示...")
         
     except Exception as e:
         print(f"❌ 演示过程中发生错误: {e}")

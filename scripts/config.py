@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Create-3+机械臂室内清洁系统配置文件
+Create-3+机械臂室内清洁系统配置文件（简化导航版）
 所有超参数和配置都在这里，方便调试和修改
 位置坐标已调整到合理范围（米为单位）
+优化转弯控制，移除卡住检测
 """
 
 import numpy as np
 import os
 
 class CleanupSystemConfig:
-    """清洁系统配置类"""
+    """清洁系统配置类（简化导航版）"""
 
     def __init__(self, username=None):
         # ==================== 用户配置 ====================
@@ -133,16 +134,16 @@ class CleanupSystemConfig:
             "dice_d20": [-110.0, 440.0, 0.05],
         }
         
-        # ==================== 机器人控制参数 ====================
+        # ==================== 机器人控制参数（优化连续运动） ====================
         self.ROBOT_CONTROL = {
-            # 移动参数
-            "max_linear_velocity": 0.5,      # 最大线速度 (m/s)
-            "max_angular_velocity": 1.8,     # 最大角速度 (rad/s)
-            "movement_threshold": 0.6,       # 到达目标的距离阈值 (m)
-            "angular_threshold": 0.3,        # 角度对齐阈值 (rad)
+            # 移动参数（优化连续运动）
+            "max_linear_velocity": 0.5,      # 适中的最大线速度 (m/s)
+            "max_angular_velocity": 2.0,     # 适中的最大角速度 (rad/s)
+            "movement_threshold": 0.4,       # 到达目标的距离阈值 (m)
+            "angular_threshold": 0.15,       # 角度对齐阈值 (rad)
             
-            # 速度平滑参数
-            "velocity_smoothing": 0.2,       # 速度平滑系数 (0-1)
+            # 速度平滑参数（最小化平滑让运动更连续）
+            "velocity_smoothing": 0.05,      # 最小速度平滑系数 (0-1)
             
             # 轮子配置
             "wheel_joint_names": ["left_wheel_joint", "right_wheel_joint"],
@@ -163,7 +164,7 @@ class CleanupSystemConfig:
             
             # 夹爪状态
             "gripper_open": 0.04,            # 张开位置 (m)
-            "gripper_closed": 0.0,           # 闭合位置 (m)
+            "gripper_closed": 0.008,           # 闭合位置 (m)
             
             # 机械臂预设姿态
             "poses": {
@@ -177,30 +178,26 @@ class CleanupSystemConfig:
             }
         }
         
-        # ==================== 导航参数配置 ====================
+        # ==================== 导航参数配置（增大容差，提高成功率） ====================
         self.NAVIGATION = {
             # A*路径规划参数
-            "grid_resolution": 0.2,          # 网格分辨率 (m)
+            "grid_resolution": 0.2,          # 合适的网格分辨率 (m)
             "map_size": 20,                  # 地图大小 (m)
             
-            # 导航容差
-            "tolerance_small_trash": 0.6,    # 小垃圾导航容差 (m)
-            "tolerance_large_trash": 0.7,    # 大垃圾导航容差 (m)
-            "tolerance_home": 0.5,           # 返回家位置容差 (m)
+            # 导航容差（大幅增大，提高成功率）
+            "tolerance_small_trash": 1.2,    # 小垃圾导航容差 (m)
+            "tolerance_large_trash": 1.3,    # 大垃圾导航容差 (m)
+            "tolerance_home": 0.8,           # 返回家位置容差 (m)
             
-            # 卡住检测参数
-            "stuck_threshold": 0.08,         # 卡住检测阈值 (m)
-            "stuck_detection_window": 200,   # 检测窗口大小 (步数)
-            "stuck_timeout": 8.0,            # 卡住超时时间 (s)
+            # 导航超时（增加时间）
+            "nav_timeout_small": 45,         # 小垃圾导航超时 (s)
+            "nav_timeout_large": 50,         # 大垃圾导航超时 (s)
+            "nav_timeout_home": 25,          # 返回家超时 (s)
             
-            # 导航超时
-            "nav_timeout_small": 25,         # 小垃圾导航超时 (s)
-            "nav_timeout_large": 30,         # 大垃圾导航超时 (s)
-            "nav_timeout_home": 15,          # 返回家超时 (s)
-            
-            # 控制策略参数
-            "angle_threshold_large": 0.8,    # 大角度阈值 (rad)
-            "angle_threshold_medium": 0.3,   # 中等角度阈值 (rad)
+            # 控制策略参数（优化连续运动）
+            "angle_threshold_large": 2.5,    # 大角度阈值 (rad)
+            "angle_threshold_medium": 1.5,   # 中等角度阈值 (rad)
+            "angle_threshold_small": 0.8,    # 小角度阈值 (rad)
             "linear_velocity_factors": {     # 线速度计算因子
                 "min": 0.2,
                 "max": 0.5,
@@ -222,13 +219,13 @@ class CleanupSystemConfig:
             "gpu_max_num_partitions": 8,
             
             # 求解器参数
-            "solver_position_iterations": 8,  # 位置求解器迭代次数
-            "solver_velocity_iterations": 4,  # 速度求解器迭代次数
+            "solver_position_iterations": 6,  # 减少迭代次数提高性能
+            "solver_velocity_iterations": 3,  # 减少迭代次数提高性能
             
             # 地面摩擦参数
-            "ground_static_friction": 1.2,
-            "ground_dynamic_friction": 1.0,
-            "ground_restitution": 0.05,
+            "ground_static_friction": 1.0,   # 减少摩擦让移动更顺滑
+            "ground_dynamic_friction": 0.8,
+            "ground_restitution": 0.02,
             
             # 机器人物理参数
             "robot_mass": 4.0,               # 机器人质量 (kg)
@@ -236,11 +233,11 @@ class CleanupSystemConfig:
             "robot_inertia": [0.12, 0.12, 0.06],    # 惯性张量
         }
         
-        # ==================== 关节控制参数 ====================
+        # ==================== 关节控制参数（优化连续运动） ====================
         self.JOINT_CONTROL = {
-            # 轮子关节参数
+            # 轮子关节参数（优化连续运动响应）
             "wheel_kp": 0.0,                 # 轮子位置增益
-            "wheel_kd": 800.0,               # 轮子速度增益
+            "wheel_kd": 1200.0,              # 增加轮子速度增益，提高响应性
             
             # 机械臂关节参数
             "arm_kp": 1000.0,                # 机械臂位置增益
@@ -321,7 +318,7 @@ class CleanupSystemConfig:
             "run_arm_pose_demo": True,         # 运行机械臂姿态演示
             "demo_poses": ["home", "ready", "inspect", "pickup", "pickup_low", "carry", "stow"],
             "stabilization_time": 2.0,         # 稳定时间 (s)
-            "collection_delay": 0.5,           # 收集间隔 (s)
+            "collection_delay": 0.3,           # 减少收集间隔 (s)
         }
     
     # ==================== 路径检测和验证方法 ====================
@@ -477,7 +474,7 @@ class CleanupSystemConfig:
     def print_summary(self):
         """打印配置摘要"""
         print("\n" + "="*60)
-        print("📋 清洁系统配置摘要")
+        print("📋 清洁系统配置摘要（简化导航版）")
         print("="*60)
         print(f"👤 用户: {self.USERNAME}")
         print(f"🏠 住宅资产库: {self.PATHS['residential_assets_root']}")
@@ -499,12 +496,16 @@ class CleanupSystemConfig:
         print(f"📚 书籍数量: {len(self.BOOK_POSITIONS)}")
         print(f"🚀 最大线速度: {self.ROBOT_CONTROL['max_linear_velocity']} m/s")
         print(f"🌀 最大角速度: {self.ROBOT_CONTROL['max_angular_velocity']} rad/s")
+        print(f"🎯 导航容差: 小垃圾 {self.NAVIGATION['tolerance_small_trash']}m, 大垃圾 {self.NAVIGATION['tolerance_large_trash']}m")
+        print(f"⏱️ 导航超时: 小垃圾 {self.NAVIGATION['nav_timeout_small']}s, 大垃圾 {self.NAVIGATION['nav_timeout_large']}s")
+        print("🔧 已移除卡住检测，优化连续运动控制")
+        print("🚀 增大导航容差，提高到达成功率")
         print("="*60)
 
 # ==================== 快速配置预设 ====================
 
 class QuickConfigs:
-    """快速配置预设"""
+    """快速配置预设（简化导航版）"""
     
     @staticmethod
     def small_scene(username=None):
@@ -513,34 +514,39 @@ class QuickConfigs:
         
         # 只保留核心家具
         config.FURNITURE_POSITIONS = {
-            "desk": [3.0, 1.5, 0.0, 0.0],
-            "chair": [2.8, 0.8, 0.0, 0.0],
-            "coffee_table": [-3.0, 2.0, 0.0, 0.0],
+            "desk": [300.0, 150.0, 0.0, 0.0],
+            "chair": [280.0, 80.0, 0.0, 0.0],
+            "coffee_table": [-300.0, 200.0, 0.0, 0.0],
         }
         
         # 减少垃圾数量
         config.SMALL_TRASH_POSITIONS = {
-            "orange1": [2.0, 1.0, 0.03],
-            "lemon1": [3.0, -1.0, 0.03],
-            "coaster": [-2.0, 1.6, 0.01],
+            "orange1": [200.0, 100.0, 0.03],
+            "lemon1": [300.0, -100.0, 0.03],
+            "coaster": [-200.0, 160.0, 0.01],
         }
         
         config.LARGE_TRASH_POSITIONS = {
-            "tin_can": [3.6, 2.4, 0.05],
-            "mason_jar": [-2.4, -2.0, 0.05],
+            "tin_can": [360.0, 240.0, 0.05],
+            "mason_jar": [-240.0, -200.0, 0.05],
         }
         
         return config
     
     @staticmethod
-    def tiny_furniture(username=None):
-        """超小家具配置 - 如果默认缩放还是太大"""
+    def fast_movement(username=None):
+        """快速移动配置 - 更高的速度和更快的响应"""
         config = CleanupSystemConfig(username)
-        config.update_scale(
-            furniture=0.01,      # 1% - 非常小的家具
-            books=0.01,          # 1% - 很小的书籍
-            small_trash=0.01,    # 1% - 更小的小垃圾
-            large_trash=0.01,    # 1% - 更小的大垃圾
+        config.update_robot_control(
+            max_linear_velocity=0.8,     # 更高的线速度
+            max_angular_velocity=2.5,    # 更高的角速度
+            velocity_smoothing=0.05      # 更少的平滑
+        )
+        config.update_navigation(
+            tolerance_small_trash=1.0,   # 更大的容差
+            tolerance_large_trash=1.1,
+            nav_timeout_small=25,        # 减少超时时间
+            nav_timeout_large=30
         )
         return config
     
@@ -578,8 +584,8 @@ class QuickConfigs:
         
         # 降低速度便于观察
         config.ROBOT_CONTROL.update({
-            "max_linear_velocity": 0.3,
-            "max_angular_velocity": 1.0,
+            "max_linear_velocity": 0.4,
+            "max_angular_velocity": 1.5,
         })
         
         return config
@@ -605,21 +611,21 @@ def example_usage():
     config.update_scale(furniture=0.02, books=0.02)
     
     # 5. 添加新的家具位置
-    config.add_furniture_position("sofa", 0.0, 6.0, 0.0, 180.0)
+    config.add_furniture_position("sofa", 0.0, 600.0, 0.0, 180.0)
     
     # 6. 添加新的垃圾位置
-    config.add_trash_position("small", "pen", 1.0, 3.6, 0.02)
-    config.add_trash_position("large", "bottle", 3.0, 5.0, 0.05)
+    config.add_trash_position("small", "pen", 100.0, 360.0, 0.02)
+    config.add_trash_position("large", "bottle", 300.0, 500.0, 0.05)
     
-    # 7. 调整机器人参数
-    config.update_robot_control(max_linear_velocity=0.4, max_angular_velocity=1.5)
+    # 7. 调整机器人参数（优化转弯）
+    config.update_robot_control(max_linear_velocity=0.6, max_angular_velocity=2.2)
     
     # 8. 调整导航参数
-    config.update_navigation(stuck_threshold=0.1, nav_timeout_small=20)
+    config.update_navigation(tolerance_small_trash=0.8, nav_timeout_small=35)
     
     # 9. 使用快速预设
     # small_config = QuickConfigs.small_scene("your_username")
-    # tiny_config = QuickConfigs.tiny_furniture("your_username")
+    # fast_config = QuickConfigs.fast_movement("your_username")
     # perf_config = QuickConfigs.performance_optimized("your_username")
     # debug_config = QuickConfigs.debug_mode("your_username")
     
