@@ -253,6 +253,9 @@ class AdaptiveGripperController:
         self.config = config
         self.force_profile = ForceProfile()
         
+        # 世界对象引用
+        self.world = None
+        
         # 夹爪参数
         self.gripper_open = config.ARM_CONFIG["gripper_open"]
         self.gripper_closed = config.ARM_CONFIG["gripper_closed"]
@@ -309,21 +312,34 @@ class AdaptiveGripperController:
             return False
     
     def _rapid_approach(self, mobile_base) -> bool:
-        """快速接近阶段"""
+        """快速接近阶段（增强版，确保可见运动）"""
         try:
+            print("   🚀 快速接近阶段...")
             # 快速移动到接近位置
             target_position = self.gripper_open * 0.7  # 70%开口
             
-            for step in range(20):
+            world = self._get_world_from_mobile_base(mobile_base)
+            
+            for step in range(30):
                 self._set_gripper_position(mobile_base, target_position)
-                time.sleep(0.05)
+                
+                # 增加仿真步进确保动作可见
+                if world:
+                    world.step(render=True)
+                time.sleep(0.033)  # 30FPS
+                
+                # 显示进度
+                if step % 10 == 0 and self.config.DEBUG["show_grasp_details"]:
+                    print(f"   📈 接近进度: {(step+1)/30*100:.0f}%")
                 
                 # 检查是否有意外接触
                 if self._check_early_contact():
                     print("   ⚠️ 检测到早期接触，切换到慢速模式")
+                    self.current_position = target_position
                     return True
             
             self.current_position = target_position
+            print("   ✅ 快速接近完成")
             return True
             
         except Exception as e:
@@ -331,23 +347,39 @@ class AdaptiveGripperController:
             return False
     
     def _slow_contact(self, mobile_base) -> bool:
-        """慢速接触检测"""
+        """慢速接触检测（增强版，确保可见运动）"""
         try:
-            contact_timeout = 5.0  # 5秒超时
+            print("   🐌 慢速接触检测阶段...")
+            contact_timeout = 8.0  # 增加超时时间
             start_time = time.time()
+            step_count = 0
+            
+            world = self._get_world_from_mobile_base(mobile_base)
             
             while time.time() - start_time < contact_timeout:
                 # 缓慢闭合夹爪
-                self.current_position -= 0.002  # 每步2mm
+                self.current_position -= 0.001  # 减小步长，更慢的运动
                 self.current_position = max(self.current_position, self.gripper_closed)
                 
                 self._set_gripper_position(mobile_base, self.current_position)
+                
+                # 增加仿真步进
+                if world:
+                    for _ in range(3):
+                        world.step(render=True)
                 time.sleep(0.1)
+                
+                step_count += 1
+                
+                # 显示进度
+                if step_count % 10 == 0 and self.config.DEBUG["show_grasp_details"]:
+                    elapsed = time.time() - start_time
+                    print(f"   📈 接触检测进度: {elapsed/contact_timeout*100:.0f}%, 位置: {self.current_position:.4f}")
                 
                 # 检测接触
                 if self._detect_contact():
                     self.contact_detected = True
-                    print(f"   ✅ 检测到接触，位置: {self.current_position:.4f}")
+                    print(f"   ✅ 检测到接触！位置: {self.current_position:.4f}")
                     return True
                 
                 # 检查是否已完全闭合
@@ -363,10 +395,14 @@ class AdaptiveGripperController:
             return False
     
     def _force_controlled_grasp(self, mobile_base, target_force: float) -> bool:
-        """力控制抓取"""
+        """力控制抓取（增强版，确保可见运动）"""
         try:
-            control_timeout = 3.0
+            print("   💪 力控制抓取阶段...")
+            control_timeout = 5.0  # 增加超时时间
             start_time = time.time()
+            step_count = 0
+            
+            world = self._get_world_from_mobile_base(mobile_base)
             
             while time.time() - start_time < control_timeout:
                 # 模拟力传感器读数
@@ -374,6 +410,11 @@ class AdaptiveGripperController:
                 
                 # PID控制
                 force_error = target_force - current_force
+                
+                # 显示力控制状态
+                if step_count % 20 == 0 and self.config.DEBUG["show_grasp_details"]:
+                    elapsed = time.time() - start_time
+                    print(f"   📊 力控制状态: 当前力={current_force:.1f}N, 目标力={target_force:.1f}N, 位置={self.current_position:.4f}")
                 
                 # 如果力过大，停止
                 if current_force > self.force_profile.force_threshold:
@@ -383,7 +424,7 @@ class AdaptiveGripperController:
                 # 如果力足够，认为抓取成功
                 if current_force >= target_force * 0.8:
                     self.object_grasped = True
-                    print(f"   ✅ 抓取成功，力: {current_force:.1f}N")
+                    print(f"   ✅ 抓取成功！力: {current_force:.1f}N")
                     return True
                 
                 # PID调节
@@ -392,7 +433,14 @@ class AdaptiveGripperController:
                 self.current_position = max(self.current_position, self.gripper_closed)
                 
                 self._set_gripper_position(mobile_base, self.current_position)
+                
+                # 增加仿真步进
+                if world:
+                    for _ in range(2):
+                        world.step(render=True)
                 time.sleep(0.05)
+                
+                step_count += 1
             
             # 检查最终状态
             final_force = self._simulate_force_feedback()
@@ -481,22 +529,40 @@ class AdaptiveGripperController:
         
         return simulated_force
     
-    def _calculate_pid_adjustment(self, error: float) -> float:
-        """计算PID调节量"""
-        # PID控制
-        self.force_pid['integral'] += error
-        derivative = error - self.force_pid['prev_error']
-        
-        adjustment = (
-            self.force_pid['kp'] * error + 
-            self.force_pid['ki'] * self.force_pid['integral'] + 
-            self.force_pid['kd'] * derivative
-        )
-        
-        self.force_pid['prev_error'] = error
-        
-        # 限制调节量
-        return np.clip(adjustment, -0.005, 0.005)
+        # 在类的最后添加_get_world_from_mobile_base方法
+    def _get_world_from_mobile_base(self, mobile_base):
+        """从mobile_base获取world对象（AdaptiveGripperController版本）"""
+        try:
+            # 优先使用已设置的world引用
+            if self.world is not None:
+                return self.world
+            
+            # 方法1: 尝试从mobile_base获取
+            if hasattr(mobile_base, '_world'):
+                return mobile_base._world
+            elif hasattr(mobile_base, 'world'):
+                return mobile_base.world
+            
+            # 方法2: 尝试从场景获取
+            if hasattr(mobile_base, '_scene') and mobile_base._scene:
+                if hasattr(mobile_base._scene, '_world'):
+                    return mobile_base._scene._world
+            
+            # 方法3: 尝试从全局获取
+            try:
+                from isaacsim.core.api import World
+                world_instance = World.instance()
+                if world_instance:
+                    return world_instance
+            except:
+                pass
+            
+            return None
+            
+        except Exception as e:
+            if hasattr(self, 'config') and self.config.DEBUG["enable_debug_output"]:
+                print(f"获取world对象失败: {e}")
+            return None
     
     def release_object(self, mobile_base) -> bool:
         """释放物体"""
@@ -532,6 +598,9 @@ class AdvancedPickAndPlaceStrategy:
         self.grasp_planner = CudaAcceleratedGraspPlanner(config)
         self.gripper_controller = AdaptiveGripperController(config)
         
+        # 世界对象引用（用于仿真步进）
+        self.world = None
+        
         # 抓取历史和学习
         self.grasp_history = deque(maxlen=100)
         self.success_patterns = {}
@@ -544,6 +613,13 @@ class AdvancedPickAndPlaceStrategy:
             'avg_grasp_time': 0.0,
             'cuda_acceleration_used': CUDA_AVAILABLE
         }
+    
+    def set_world_reference(self, world):
+        """设置世界对象引用"""
+        self.world = world
+        self.gripper_controller.world = world
+        if self.config.DEBUG["enable_debug_output"]:
+            print("✅ 高级抓取系统已链接到World对象")
         
     def execute_pick_and_place(self, mobile_base, target_object, 
                              drop_location: np.ndarray) -> bool:
@@ -625,36 +701,60 @@ class AdvancedPickAndPlaceStrategy:
             return False
     
     def _execute_grasp_sequence(self, mobile_base, target_object) -> bool:
-        """执行抓取序列"""
+        """执行抓取序列（增强版，确保可见运动）"""
         try:
             print("   🎯 执行精确抓取序列...")
             
+            world = self._get_world_from_mobile_base(mobile_base)
+            
             # 移动到预抓取姿态
+            print("   🔧 步骤1: 移动到预抓取姿态")
             success = self._move_to_pre_grasp_pose(mobile_base)
             if not success:
                 return False
             
+            # 等待稳定
+            print("   ⏳ 等待系统稳定...")
+            if world:
+                for _ in range(30):
+                    world.step(render=True)
+                    time.sleep(0.033)
+            
             # 执行自适应抓取
+            print("   🤏 步骤2: 执行自适应抓取")
             success = self.gripper_controller.execute_adaptive_grasp(mobile_base)
             if not success:
                 return False
+            
+            # 等待抓取稳定
+            print("   ⏳ 等待抓取稳定...")
+            if world:
+                for _ in range(20):
+                    world.step(render=True)
+                    time.sleep(0.033)
             
             print("   ✅ 抓取序列完成")
             return True
             
         except Exception as e:
             print(f"   ❌ 抓取序列失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _execute_lift_sequence(self, mobile_base) -> bool:
-        """执行提升序列"""
+        """执行提升序列（增强版，确保可见运动）"""
         try:
             print("   ⬆️ 提升物体...")
+            
+            world = self._get_world_from_mobile_base(mobile_base)
             
             # 缓慢提升机械臂
             lift_poses = ["carry", "stow"]
             
-            for pose_name in lift_poses:
+            for i, pose_name in enumerate(lift_poses):
+                print(f"   📈 提升阶段 {i+1}/{len(lift_poses)}: {pose_name}")
+                
                 success = self._move_arm_to_pose(mobile_base, pose_name)
                 if not success:
                     return False
@@ -664,31 +764,48 @@ class AdvancedPickAndPlaceStrategy:
                     print("   ❌ 提升过程中物体掉落")
                     return False
                 
-                time.sleep(0.5)  # 稳定时间
+                # 等待稳定
+                print("   ⏳ 等待提升稳定...")
+                if world:
+                    for _ in range(30):
+                        world.step(render=True)
+                        time.sleep(0.033)
             
             print("   ✅ 提升完成")
             return True
             
         except Exception as e:
             print(f"   ❌ 提升失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _execute_transport_sequence(self, mobile_base, drop_location: np.ndarray) -> bool:
-        """执行运输序列"""
+        """执行运输序列（增强版，确保可见运动）"""
         try:
             print("   🚚 运输到目标位置...")
             
-            # 这里可以集成导航系统
-            # 简化版本：直接认为已经到达目标位置
-            transport_time = 2.0
+            world = self._get_world_from_mobile_base(mobile_base)
             
-            for i in range(int(transport_time * 10)):
+            # 保持运输姿态并监控抓取状态
+            transport_time = 3.0  # 增加运输时间
+            steps = int(transport_time * 30)  # 30FPS
+            
+            for i in range(steps):
                 # 监控抓取状态
                 if not self.gripper_controller.object_grasped:
                     print("   ❌ 运输过程中物体掉落")
                     return False
                 
-                time.sleep(0.1)
+                # 保持仿真运行
+                if world:
+                    world.step(render=True)
+                time.sleep(0.033)
+                
+                # 显示进度
+                if i % 30 == 0 and self.config.DEBUG["show_grasp_details"]:
+                    progress = (i + 1) / steps * 100
+                    print(f"   📈 运输进度: {progress:.0f}%")
             
             print("   ✅ 运输完成")
             return True
@@ -698,19 +815,37 @@ class AdvancedPickAndPlaceStrategy:
             return False
     
     def _execute_place_sequence(self, mobile_base, target_object, drop_location: np.ndarray) -> bool:
-        """执行放置序列"""
+        """执行放置序列（增强版，确保可见运动）"""
         try:
             print("   📦 放置物体...")
             
+            world = self._get_world_from_mobile_base(mobile_base)
+            
             # 移动到放置姿态
+            print("   🔧 步骤1: 移动到放置姿态")
             success = self._move_to_place_pose(mobile_base, drop_location)
             if not success:
                 return False
             
+            # 等待稳定
+            print("   ⏳ 等待放置准备...")
+            if world:
+                for _ in range(30):
+                    world.step(render=True)
+                    time.sleep(0.033)
+            
             # 释放物体
+            print("   🔓 步骤2: 释放物体")
             success = self.gripper_controller.release_object(mobile_base)
             if not success:
                 return False
+            
+            # 等待释放稳定
+            print("   ⏳ 等待释放稳定...")
+            if world:
+                for _ in range(20):
+                    world.step(render=True)
+                    time.sleep(0.033)
             
             # 移动物体到最终位置（模拟）
             final_position = drop_location.copy()
@@ -718,25 +853,37 @@ class AdvancedPickAndPlaceStrategy:
             target_object.set_world_pose(final_position, target_object.get_world_pose()[1])
             
             # 回到安全姿态
+            print("   🏠 步骤3: 回到安全姿态")
             self._move_arm_to_pose(mobile_base, "home")
+            
+            # 最后等待
+            print("   ⏳ 最终稳定...")
+            if world:
+                for _ in range(30):
+                    world.step(render=True)
+                    time.sleep(0.033)
             
             print("   ✅ 放置完成")
             return True
             
         except Exception as e:
             print(f"   ❌ 放置失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _move_to_pre_grasp_pose(self, mobile_base) -> bool:
         """移动到预抓取姿态"""
+        print("   🔧 移动到预抓取姿态...")
         return self._move_arm_to_pose(mobile_base, "ready")
     
     def _move_to_place_pose(self, mobile_base, drop_location: np.ndarray) -> bool:
         """移动到放置姿态"""
+        print("   📦 移动到放置姿态...")
         return self._move_arm_to_pose(mobile_base, "pickup")
     
     def _move_arm_to_pose(self, mobile_base, pose_name: str) -> bool:
-        """移动机械臂到指定姿态"""
+        """移动机械臂到指定姿态（增强版，确保可见运动）"""
         try:
             arm_poses = self.config.ARM_CONFIG["poses"]
             if pose_name not in arm_poses:
@@ -746,33 +893,107 @@ class AdvancedPickAndPlaceStrategy:
             target_positions = arm_poses[pose_name]
             arm_joint_names = self.config.ARM_CONFIG["joint_names"]
             
+            print(f"   🦾 移动机械臂到 '{pose_name}' 姿态...")
+            
             articulation_controller = mobile_base.get_articulation_controller()
             if not articulation_controller:
+                print("   ❌ 无法获取关节控制器")
                 return False
             
             if hasattr(mobile_base, 'dof_names'):
+                # 获取当前位置
+                try:
+                    current_positions = articulation_controller.get_joint_positions()
+                    if self.config.DEBUG["show_grasp_details"]:
+                        print(f"   📊 当前关节位置: {current_positions[:7] if len(current_positions) >= 7 else current_positions}")
+                except:
+                    current_positions = None
+                
                 num_dofs = len(mobile_base.dof_names)
                 joint_positions = np.zeros(num_dofs)
                 
+                # 设置目标关节位置
                 for i, joint_name in enumerate(arm_joint_names):
                     if joint_name in mobile_base.dof_names and i < len(target_positions):
                         idx = mobile_base.dof_names.index(joint_name)
                         joint_positions[idx] = target_positions[i]
                 
+                if self.config.DEBUG["show_grasp_details"]:
+                    print(f"   🎯 目标关节位置: {target_positions}")
+                
+                # 应用关节动作
                 from isaacsim.core.utils.types import ArticulationAction
                 action = ArticulationAction(joint_positions=joint_positions)
                 articulation_controller.apply_action(action)
                 
-                # 等待运动完成
-                for _ in range(30):
-                    mobile_base._world.step(render=True) if hasattr(mobile_base, '_world') else None
-                    time.sleep(0.016)
+                # 增加仿真步进，确保动作可见
+                print(f"   ⏳ 等待机械臂运动完成...")
+                world = self._get_world_from_mobile_base(mobile_base)
                 
+                for step in range(120):  # 增加到120步，确保运动完成
+                    if world:
+                        world.step(render=True)
+                    time.sleep(0.033)  # 30FPS，更慢的运动便于观察
+                    
+                    # 每20步显示一次进度
+                    if step % 20 == 0 and self.config.DEBUG["show_grasp_details"]:
+                        progress = (step + 1) / 120 * 100
+                        print(f"   📈 运动进度: {progress:.0f}%")
+                
+                # 验证最终位置
+                try:
+                    final_positions = articulation_controller.get_joint_positions()
+                    if self.config.DEBUG["show_grasp_details"]:
+                        print(f"   📊 最终关节位置: {final_positions[:7] if len(final_positions) >= 7 else final_positions}")
+                except:
+                    pass
+                
+                print(f"   ✅ 机械臂移动到 '{pose_name}' 完成")
                 return True
             
         except Exception as e:
             print(f"   ❌ 移动机械臂失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
+    
+    def _get_world_from_mobile_base(self, mobile_base):
+        """从mobile_base获取world对象（兼容多版本）"""
+        try:
+            # 优先使用已设置的world引用
+            if self.world is not None:
+                return self.world
+            
+            # 方法1: 尝试从mobile_base获取
+            if hasattr(mobile_base, '_world'):
+                return mobile_base._world
+            elif hasattr(mobile_base, 'world'):
+                return mobile_base.world
+            
+            # 方法2: 尝试从场景获取
+            if hasattr(mobile_base, '_scene') and mobile_base._scene:
+                if hasattr(mobile_base._scene, '_world'):
+                    return mobile_base._scene._world
+            
+            # 方法3: 尝试从全局获取
+            try:
+                from isaacsim.core.api import World
+                world_instance = World.instance()
+                if world_instance:
+                    return world_instance
+            except:
+                pass
+            
+            # 方法4: 通过gripper_controller获取（如果设置了）
+            if hasattr(self, 'gripper_controller') and hasattr(self.gripper_controller, 'world'):
+                return self.gripper_controller.world
+            
+            return None
+            
+        except Exception as e:
+            if hasattr(self, 'config') and self.config.DEBUG["enable_debug_output"]:
+                print(f"获取world对象失败: {e}")
+            return None
     
     def _handle_failure(self, reason: str) -> bool:
         """处理失败情况"""

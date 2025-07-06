@@ -245,6 +245,7 @@ class ConfigurableCreate3CleanupSystem:
             
             # 初始化高级抓取放下系统
             self.advanced_pick_place = create_advanced_pick_and_place_system(self.config)
+            self.advanced_pick_place.set_world_reference(self.world)
             print("✅ 高级抓取放下系统初始化完成")
             
             print("✅ Isaac Sim环境初始化完成（高级抓取+CUDA加速）")
@@ -1008,6 +1009,8 @@ class ConfigurableCreate3CleanupSystem:
                 
         except Exception as e:
             print(f"   ❌ 高级抓取序列异常: {e}")
+            import traceback
+            traceback.print_exc()
             self.performance_stats['total_grasp_attempts'] += 1
             return False
     
