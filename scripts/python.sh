@@ -48,7 +48,7 @@ export EXP_PATH=$SCRIPT_DIR/apps
 source ${SCRIPT_DIR}/setup_python_env.sh
 
 # By default use our python, but allow overriding it
-python_exe=${PYTHONEXE:-"${SCRIPT_DIR}/kit/python/bin/python3"}
+python_exe=${PYTHONEXE:-"python"}
 
 if ! [[ -z "${CONDA_PREFIX}" ]]; then
   echo "Warning: running in conda env, please deactivate before executing this script"
