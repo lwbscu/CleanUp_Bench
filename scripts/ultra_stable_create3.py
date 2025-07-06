@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-CUDA加速优化版Create-3+机械臂垃圾收集系统（全知全能导航版）
+CUDA加速优化版Create-3+机械臂垃圾收集系统（高级抓取放下版）
+集成Auromix auro_sim风格的高级抓取策略
+支持CUDA加速、力控制反馈、自适应抓取和性能监控
 使用config.py进行参数管理，支持多用户环境
-集成全知全能导航系统，统一时间步，无障碍物限制
-修正位置缩放问题，解决物理场景步进不一致
 """
 
 from isaacsim import SimulationApp
@@ -21,14 +21,12 @@ username = (
     'user'                                       # 默认值
 )
 
-print(f"🔧 启动清洁系统，用户: {username}")
+print(f"🔧 启动高级抓取清洁系统，用户: {username}")
 
 # 根据需要选择配置
 config = CleanupSystemConfig(username)                    # 默认配置
 # config = QuickConfigs.small_scene(username)              # 小场景配置
-# config = QuickConfigs.tiny_furniture(username)           # 超小家具配置
 # config = QuickConfigs.performance_optimized(username)    # 性能优化配置
-# config = QuickConfigs.debug_mode(username)                 # 调试模式配置
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
 COORDINATE_SCALE = 0.01  # 将几百的坐标缩放到几米的世界坐标
@@ -63,8 +61,15 @@ import isaacsim.core.utils.prims as prim_utils
 # 导入简化导航系统
 from advanced_navigation import AdvancedNavigationSystem
 
+# 导入高级抓取放下系统
+from pick_and_place import (
+    AdvancedPickAndPlaceStrategy, 
+    create_advanced_pick_and_place_system,
+    GraspPhase
+)
+
 class ConfigurableCreate3CleanupSystem:
-    """基于配置文件的Create-3+机械臂室内清洁系统（全知全能导航版）"""
+    """基于配置文件的Create-3+机械臂室内清洁系统（高级抓取版）"""
     
     def __init__(self, config):
         self.config = config
@@ -113,6 +118,9 @@ class ConfigurableCreate3CleanupSystem:
         self.collected_objects = []
         self.scene_objects = []
         
+        # 高级抓取放下系统
+        self.advanced_pick_place = None
+        
         # 简化导航系统
         self.advanced_navigation = None
         
@@ -120,12 +128,15 @@ class ConfigurableCreate3CleanupSystem:
         self.grid_resolution = config.NAVIGATION["grid_resolution"]
         self.map_size = config.NAVIGATION["map_size"]
         
-        # 性能监控
+        # 性能监控（增强版）
         self.performance_stats = {
             'movement_commands_sent': 0,
             'successful_movements': 0,
             'total_distance_traveled': 0.0,
-            'total_navigation_time': 0.0
+            'total_navigation_time': 0.0,
+            'total_grasp_attempts': 0,
+            'successful_grasps': 0,
+            'cuda_acceleration_used': False
         }
     
     def get_asset_path(self, relative_path):
@@ -181,7 +192,7 @@ class ConfigurableCreate3CleanupSystem:
     
     def initialize_isaac_sim(self):
         """初始化Isaac Sim环境（CUDA优化）"""
-        print("🚀 正在初始化Isaac Sim环境（简化导航+CUDA加速）...")
+        print("🚀 正在初始化Isaac Sim环境（高级抓取+CUDA加速）...")
         
         try:
             # 验证资产文件
@@ -232,7 +243,11 @@ class ConfigurableCreate3CleanupSystem:
             self.advanced_navigation = AdvancedNavigationSystem(self.config)
             print("✅ 全知全能导航系统初始化完成")
             
-            print("✅ Isaac Sim环境初始化完成（统一时间步+全知全能导航）")
+            # 初始化高级抓取放下系统
+            self.advanced_pick_place = create_advanced_pick_and_place_system(self.config)
+            print("✅ 高级抓取放下系统初始化完成")
+            
+            print("✅ Isaac Sim环境初始化完成（高级抓取+CUDA加速）")
             return True
             
         except Exception as e:
@@ -270,7 +285,7 @@ class ConfigurableCreate3CleanupSystem:
     
     def initialize_robot(self):
         """初始化Create-3+机械臂（配置驱动）"""
-        print("🤖 正在初始化Create-3+机械臂（配置驱动）...")
+        print("🤖 正在初始化Create-3+机械臂（高级抓取版）...")
         
         try:
             if self.config.DEBUG["enable_debug_output"]:
@@ -437,7 +452,7 @@ class ConfigurableCreate3CleanupSystem:
             
             print(f"✅ 清洁环境创建完成（配置驱动+位置修正）:")
             print(f"   - 小垃圾(吸附): {len(self.small_trash_objects)}个")
-            print(f"   - 大垃圾(抓取): {len(self.large_trash_objects)}个")
+            print(f"   - 大垃圾(高级抓取): {len(self.large_trash_objects)}个")
             
             return True
             
@@ -960,66 +975,44 @@ class ConfigurableCreate3CleanupSystem:
             traceback.print_exc()
             return False
     
-    def precise_grasp_sequence(self, target_position):
-        """精确抓取序列（配置驱动）"""
+    # ==================== 高级抓取方法（替换旧的抓取逻辑） ====================
+    
+    def advanced_grasp_sequence(self, target_object) -> bool:
+        """高级抓取序列（替换原有的 precise_grasp_sequence）"""
         try:
             if self.config.DEBUG["show_grasp_details"]:
-                print("   🎯 开始精确抓取序列...")
+                print("   🎯 开始高级抓取序列...")
             
-            self._stop_robot()
-            self._wait_for_stability(0.5)
+            # 获取目标位置
+            target_position, _ = target_object.get_world_pose()
             
-            if self.config.DEBUG["show_grasp_details"]:
-                print("   1. 快速准备...")
-            self._move_arm_to_pose("ready")
+            # 计算放置位置（地下表示已收集）
+            drop_location = target_position.copy()
+            drop_location[2] = -1.0
             
-            robot_pos, _ = self.get_robot_pose()
-            distance_to_target = np.linalg.norm(robot_pos[:2] - target_position[:2])
+            # 使用高级抓取放下系统
+            success = self.advanced_pick_place.execute_pick_and_place(
+                self.mobile_base, target_object, drop_location
+            )
             
-            if self.config.DEBUG["show_grasp_details"]:
-                print(f"   📏 距离: {distance_to_target:.3f}m")
-            
-            if distance_to_target > 1.0:
+            if success:
+                self.performance_stats['successful_grasps'] += 1
                 if self.config.DEBUG["show_grasp_details"]:
-                    print("   ⚠️ 距离太远，无法精确抓取")
-                return False
-            
-            pickup_pose = "pickup_low" if distance_to_target < 0.7 else "pickup"
-            if self.config.DEBUG["show_grasp_details"]:
-                print(f"   2. 使用 {pickup_pose} 姿态")
-            
-            self._move_arm_to_pose("inspect")
-            self._move_arm_to_pose(pickup_pose)
-            self._control_gripper("open")
-            self._control_gripper("close")
-            
-            # 使用配置的成功率
-            success_probability = self.config.SUCCESS_RATES["grasp_success_probability"]
-            
-            if random.random() < success_probability:
-                if self.config.DEBUG["show_grasp_details"]:
-                    print("   ✅ 抓取成功！")
-                self._move_arm_to_pose("carry")
-                self._move_arm_to_pose("stow")
-                return True
+                    print("   ✅ 高级抓取序列成功！")
             else:
                 if self.config.DEBUG["show_grasp_details"]:
-                    print("   ❌ 抓取失败！")
-                self._control_gripper("open")
-                self._move_arm_to_pose("stow")
-                return False
+                    print("   ❌ 高级抓取序列失败")
+            
+            self.performance_stats['total_grasp_attempts'] += 1
+            return success
                 
         except Exception as e:
-            print(f"   ❌ 精确抓取失败: {e}")
-            try:
-                self._control_gripper("open")
-                self._move_arm_to_pose("stow")
-            except:
-                pass
+            print(f"   ❌ 高级抓取序列异常: {e}")
+            self.performance_stats['total_grasp_attempts'] += 1
             return False
     
     def collect_small_trash(self, trash_object):
-        """收集小垃圾（配置驱动）"""
+        """收集小垃圾（保持原有逻辑）"""
         try:
             trash_name = trash_object.name
             print(f"🔥 收集小垃圾: {trash_name}")
@@ -1058,10 +1051,10 @@ class ConfigurableCreate3CleanupSystem:
             return False
     
     def collect_large_trash(self, trash_object):
-        """收集大垃圾（配置驱动）"""
+        """收集大垃圾（使用高级抓取系统）"""
         try:
             trash_name = trash_object.name
-            print(f"🦾 收集大垃圾: {trash_name}")
+            print(f"🦾 收集大垃圾: {trash_name} (高级抓取)")
             
             trash_position = trash_object.get_world_pose()[0]
             target_position = trash_position.copy()
@@ -1078,21 +1071,16 @@ class ConfigurableCreate3CleanupSystem:
             )
             
             if nav_success:
-                grasp_success = self.precise_grasp_sequence(target_position)
+                # 使用高级抓取序列替换原有的简单抓取
+                grasp_success = self.advanced_grasp_sequence(trash_object)
                 
                 if grasp_success:
-                    robot_pos, _ = self.get_robot_pose()
-                    collected_pos = robot_pos.copy()
-                    collected_pos[2] = -1.0
-                    
-                    trash_object.set_world_pose(collected_pos, trash_object.get_world_pose()[1])
                     self.collected_objects.append(trash_name)
-                    
-                    print(f"✅ 大垃圾 {trash_name} 精确夹取成功！")
+                    print(f"✅ 大垃圾 {trash_name} 高级抓取成功！")
                     return True
                 else:
-                    print(f"❌ 大垃圾 {trash_name} 抓取失败")
-                    self.collected_objects.append(f"{trash_name}(抓取失败)")
+                    print(f"❌ 大垃圾 {trash_name} 高级抓取失败")
+                    self.collected_objects.append(f"{trash_name}(高级抓取失败)")
                     return False
             else:
                 print(f"⚠️ 大垃圾 {trash_name} 导航失败")
@@ -1104,10 +1092,10 @@ class ConfigurableCreate3CleanupSystem:
             return False
     
     def run_indoor_cleanup_demo(self):
-        """运行室内清洁演示（全知全能导航版）"""
+        """运行室内清洁演示（高级抓取版）"""
         print("\n" + "="*70)
-        print("🏠 全知全能导航版Create-3+机械臂室内清洁系统演示")
-        print("配置文件管理 | 统一时间步 | 全知全能导航 | CUDA加速 | 位置修正")
+        print("🏠 高级抓取版Create-3+机械臂室内清洁系统演示")
+        print("配置文件管理 | 统一时间步 | CUDA加速抓取 | 力控制反馈")
         print("="*70)
         
         # 使用配置的稳定时间
@@ -1119,12 +1107,12 @@ class ConfigurableCreate3CleanupSystem:
         # 显示物体位置验证
         print(f"\n🔍 物体位置验证:")
         if self.small_trash_objects:
-            for i, obj in enumerate(self.small_trash_objects[:3]):  # 显示前3个
+            for i, obj in enumerate(self.small_trash_objects[:3]):
                 obj_pos, _ = obj.get_world_pose()
                 print(f"   小垃圾 {obj.name}: {obj_pos[:2]}")
         
         if self.large_trash_objects:
-            for i, obj in enumerate(self.large_trash_objects[:3]):  # 显示前3个
+            for i, obj in enumerate(self.large_trash_objects[:3]):
                 obj_pos, _ = obj.get_world_pose()
                 print(f"   大垃圾 {obj.name}: {obj_pos[:2]}")
         
@@ -1150,8 +1138,8 @@ class ConfigurableCreate3CleanupSystem:
                 collection_success += 1
             time.sleep(self.config.EXPERIMENT["collection_delay"])
         
-        # 收集大垃圾
-        print(f"\n🦾 开始智能收集大垃圾...")
+        # 收集大垃圾（使用高级抓取）
+        print(f"\n🦾 开始高级抓取大垃圾...")
         for i, trash in enumerate(self.large_trash_objects):
             print(f"\n📍 目标 {i+1}/{len(self.large_trash_objects)}: {trash.name}")
             if self.collect_large_trash(trash):
@@ -1183,27 +1171,38 @@ class ConfigurableCreate3CleanupSystem:
         if self.advanced_navigation:
             self.advanced_navigation.print_stats()
         
+        # 显示高级抓取统计
+        if self.advanced_pick_place:
+            self.advanced_pick_place.print_performance_report()
+        
         # 显示配置总结
         self.config.print_summary()
         
-        print("\n✅ 全知全能导航版室内清洁演示完成！")
+        print("\n✅ 高级抓取版室内清洁演示完成！")
         print("💡 要调整参数，请编辑 config.py 文件")
-        print("🚀 导航系统已升级为全知全能，可到达地图任何位置")
+        print("🦾 已集成高级抓取系统，支持CUDA加速和力控制反馈")
         print("🔧 统一时间步，解决物理场景步进不一致问题")
         print("🗺️ 无障碍物限制，直接路径规划")
     
     def _print_performance_stats(self):
-        """打印性能统计"""
+        """打印性能统计（增强版）"""
         stats = self.performance_stats
         success_rate = 0
         if stats['movement_commands_sent'] > 0:
             success_rate = (stats['successful_movements'] / stats['movement_commands_sent']) * 100
         
-        print(f"\n🚀 性能统计:")
+        grasp_success_rate = 0
+        if stats['total_grasp_attempts'] > 0:
+            grasp_success_rate = (stats['successful_grasps'] / stats['total_grasp_attempts']) * 100
+        
+        print(f"\n🚀 系统性能统计:")
         print(f"   移动命令发送: {stats['movement_commands_sent']}")
         print(f"   成功移动: {stats['successful_movements']}")
         print(f"   移动成功率: {success_rate:.1f}%")
         print(f"   总导航时间: {stats['total_navigation_time']:.1f}s")
+        print(f"   抓取尝试: {stats['total_grasp_attempts']}")
+        print(f"   成功抓取: {stats['successful_grasps']}")
+        print(f"   抓取成功率: {grasp_success_rate:.1f}%")
         
         if stats['total_navigation_time'] > 0:
             avg_speed = stats['total_distance_traveled'] / stats['total_navigation_time']
@@ -1223,12 +1222,12 @@ class ConfigurableCreate3CleanupSystem:
             self._stop_robot()
             if self.world:
                 self.world.stop()
-            print("🧹 全知全能导航系统清理完成")
+            print("🧹 高级抓取清洁系统清理完成")
         except Exception as e:
             print(f"清理时出错: {e}")
 
 def main():
-    """主函数（全知全能导航优化版）"""
+    """主函数（高级抓取优化版）"""
     
     # 显示配置摘要
     config.print_summary()
@@ -1236,7 +1235,7 @@ def main():
     system = ConfigurableCreate3CleanupSystem(config)
     
     try:
-        print("🚀 启动全知全能导航版室内清洁系统（统一时间步版）...")
+        print("🚀 启动高级抓取版室内清洁系统（CUDA加速）...")
         
         # 高效初始化
         success = system.initialize_isaac_sim()
@@ -1273,7 +1272,7 @@ def main():
         # 保持系统运行
         print("\n💡 按 Ctrl+C 退出演示")
         print("💡 配置文件: config.py")
-        print("🚀 已启用全知全能导航系统，可到达地图任何位置")
+        print("🦾 已启用高级抓取系统：CUDA加速 + 力控制反馈")
         print("🔧 统一物理和渲染时间步，解决步进不一致问题")
         print("🗺️ 无障碍物限制的路径规划")
         try:
@@ -1281,7 +1280,7 @@ def main():
                 system.world.step(render=True)
                 time.sleep(0.016)
         except KeyboardInterrupt:
-            print("\n👋 退出全知全能导航演示...")
+            print("\n👋 退出高级抓取演示...")
         
     except Exception as e:
         print(f"❌ 演示过程中发生错误: {e}")
