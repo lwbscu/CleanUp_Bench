@@ -265,8 +265,6 @@ class OSGTCleanupSystemConfig:
                 "graspable_1": "Food/Containers/TinCan.usd",          # 容器类
                 "graspable_2": "Food/Containers/MasonJar.usd",        # 瓶罐类
                 "graspable_3": "Misc/Supplies/MechanicalPencil.usd",  # 工具类
-                "graspable_4": "Entertainment/Games/DiceSet/D6.usd",   # 小型零件
-                "graspable_5": "Entertainment/Games/DiceSet/D20.usd",  # 精密器件
                 # 书籍文档类
                 "graspable_book_1": "Decor/Books/Book_01.usd",
                 "graspable_book_2": "Decor/Books/Book_02.usd", 
