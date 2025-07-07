@@ -97,51 +97,47 @@ class OSGTCleanupSystemConfig:
         self.OBSTACLES_POSITIONS = {
             # 格式: "障碍物名": [x, y, z, rotation_z_degrees]
             # 适配多场景：家庭(桌椅)、学校(课桌)、医院(病床)、工厂(设备)
-            "obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
-            "obstacle_2": [140.0, 60.0, 0.0, 0.0],      # 座椅/推车
-            "obstacle_3": [-200.0, 180.0, 0.0, 0.0],    # 中央设施
-            "obstacle_4": [350.0, -280.0, 0.0, 45.0],   # 边角设备
-            "obstacle_5": [-450.0, -150.0, 0.0, 90.0],  # 存储设施
-            "obstacle_6": [-380.0, -420.0, 0.0, 0.0],   # 大型设备/书架
+            # "obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
+            # "obstacle_2": [140.0, 60.0, 0.0, 0.0],      # 座椅/推车
+            # "obstacle_3": [-200.0, 180.0, 0.0, 0.0],    # 中央设施
+            # "obstacle_4": [350.0, -280.0, 0.0, 45.0],   # 边角设备
+            # "obstacle_5": [-450.0, -150.0, 0.0, 90.0],  # 存储设施
+            # "obstacle_6": [-380.0, -420.0, 0.0, 0.0],   # 大型设备/书架
         }
         
         # S类 - 可清扫物位置配置 (Sweepable Items)
         self.SWEEPABLE_POSITIONS = {
             # 格式: "可清扫物名": [x, y, z]
             # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
-            "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
-            "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
-            "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
-            "sweepable_4": [-680.0, 120.0, 0.015],      # 清洁盲区
-            "sweepable_5": [750.0, 80.0, 0.015],        # 设备下方
-            "sweepable_6": [-420.0, 650.0, 0.03],       # 通道区域
-            "sweepable_7": [320.0, -580.0, 0.03],       # 边缘区域
+            # "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
+            # "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
+            # "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
+            # "sweepable_4": [-680.0, 120.0, 0.015],      # 清洁盲区
+            # "sweepable_5": [750.0, 80.0, 0.015],        # 设备下方
+            # "sweepable_6": [-420.0, 650.0, 0.03],       # 通道区域
+            # "sweepable_7": [320.0, -580.0, 0.03],       # 边缘区域
         }
         
         # G类 - 可抓取物位置配置 (Graspable Items)
         self.GRASPABLE_POSITIONS = {
             # 格式: "可抓取物名": [x, y, z]
             # 工具、容器、书籍、零件等需要机械臂抓取的物体
-            "graspable_1": [240.0, 360.0, 0.05],        # 容器类
-            "graspable_2": [-325.0, -240.0, 0.05],      # 工具类
-            "graspable_3": [190.0, -375.0, 0.05],       # 文具类
-            "graspable_4": [425.0, 190.0, 0.05],        # 零件类
-            "graspable_5": [-110.0, 440.0, 0.05],       # 设备类
-            # 书籍等特殊可抓取物
-            "graspable_book_1": [0, -390.0, 0.8],  # 散落书本
-            "graspable_book_3": [-330.0, -370.0, 0.8],  # 桌面书籍
-            "graspable_book_2": [-350.0, -410.0, 0.8],  # 文档资料
-            "spoon_1": [100.0, -300.0, 0.08],  # 勺子
+            "orange2": [680.0, 165.0, 0.1],
+            "lemon2": [505.0, -266.0, 0.1],
+            "tin_can": [240.0, -75.0, 0.05],
+            "bottle": [650, -44, 0.1],
+            "cup": [332, 33, 0.1],
+            "fork": [-316, -391, 0.1],
         }
         
         # T类 - 任务区位置配置 (Task Areas)
         self.TASK_AREAS_POSITIONS = {
             # 格式: "任务区名": [x, y, z, rotation_z_degrees]
             # 回收区、分拣区、存放区等
-            "collection_zone_s": [800.0, 800.0, 0.0, 0.0],     # S类回收区
-            "collection_zone_g": [-800.0, 800.0, 0.0, 0.0],    # G类存放区
-            "sorting_area": [0.0, 900.0, 0.0, 0.0],             # 分拣中心
-            "maintenance_station": [0.0, -900.0, 0.0, 0.0],     # 维护站点
+            # "collection_zone_s": [800.0, 800.0, 0.0, 0.0],     # S类回收区
+            # "collection_zone_g": [-800.0, 800.0, 0.0, 0.0],    # G类存放区
+            # "sorting_area": [0.0, 900.0, 0.0, 0.0],             # 分拣中心
+            # "maintenance_station": [0.0, -900.0, 0.0, 0.0],     # 维护站点
         }
         
         # ==================== 机器人控制参数 ====================
@@ -252,6 +248,7 @@ class OSGTCleanupSystemConfig:
                 "obstacle_6": "Furniture/Bookshelves/Fenton.usd",     # 大型设备
             },
             
+            },
             # S类 - 可清扫物配置 (小颗粒吸附收集)
             "sweepable_items": {
                 "sweepable_1": "Decor/Tchotchkes/Orange_01.usd",      # 有机碎渣
@@ -275,6 +272,22 @@ class OSGTCleanupSystemConfig:
                 "graspable_book_2": "Decor/Books/Book_02.usd", 
                 "graspable_book_3": "Decor/Books/Book_11.usd",
                 "spoon_1": "Kitchen_set/assets/Spoon/Spoon.geom.usd",  # 勺子
+
+                "plate": "Kitchen_set/assets/Plate/Plate.usd",
+                "bowl": "Kitchen_set/assets/Bowl/Bowl.usd",
+                "cup": "Kitchen_set/assets/Cup/Cup.usd",
+                "pan": "Kitchen_set/assets/Pan/Pan.usd",
+                "bottle": "Kitchen_set/assets/Bottle/Bottle.usd",
+                "spoon": "Kitchen_set/assets/Spoon/Spoon.usd",
+                "fork": "Kitchen_set/assets/Fork/Fork.usd",
+                "cheerio": "Kitchen_set/assets/Cheerio/Cheerio.usd",
+                "paper_small": "Kitchen_set/assets/PaperSmall/PaperSmall.usd",
+                "crayon": "Kitchen_set/assets/Crayon/Crayon.usd",
+                "tin_can": "Food/Containers/TinCan.usd",
+                "mason_jar": "Food/Containers/MasonJar.usd",
+                "pencil": "Misc/Supplies/MechanicalPencil.usd",
+                "dice_d6": "Entertainment/Games/DiceSet/D6.usd",
+                "dice_d20": "Entertainment/Games/DiceSet/D20.usd",
             },
             
             # T类 - 任务区配置 (基础形状表示功能区)
@@ -283,6 +296,8 @@ class OSGTCleanupSystemConfig:
                 "collection_zone_g": "Furniture/Desks/Desk_01.usd",   # G类存放台
                 "sorting_area": "Furniture/CoffeeTables/Midtown.usd",  # 分拣中心
                 "maintenance_station": "Furniture/EndTables/Festus01.usd", # 维护站点
+
+
             }
         }
         
