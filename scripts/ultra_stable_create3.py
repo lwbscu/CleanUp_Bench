@@ -9,7 +9,7 @@ O类-障碍物 | S类-可清扫物 | G类-可抓取物 | T类-任务区
 from isaacsim import SimulationApp
 
 # 先导入OSGT配置，然后初始化仿真
-from config import OSGTCleanupSystemConfig, OSGTQuickConfigs
+from config import OSGTCleanupSystemConfig
 import os
 
 # 获取用户名（支持多种方式）
@@ -25,10 +25,6 @@ print(f"🔧 启动OSGT四类物体清洁系统，用户: {username}")
 
 # 根据需要选择配置和场景类型
 config = OSGTCleanupSystemConfig(username, "residential")         # 家庭住宅场景
-# config = OSGTQuickConfigs.residential_scene(username)           # 家庭住宅预设
-# config = OSGTQuickConfigs.school_scene(username)                # 学校场景预设
-# config = OSGTQuickConfigs.hospital_scene(username)              # 医院场景预设
-# config = OSGTQuickConfigs.factory_scene(username)               # 工厂场景预设
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
 COORDINATE_SCALE = 0.01  # 将几百的坐标缩放到几米的世界坐标
@@ -332,11 +328,80 @@ class OSGTCreate3CleanupSystem:
             traceback.print_exc()
             return False
     
+    def load_background_scene(self):
+        """加载背景场景USD文件（使用配置文件中的BACKGROUND_ENVIRONMENT）"""
+        if not hasattr(self.config, 'BACKGROUND_ENVIRONMENT'):
+            if self.config.DEBUG["enable_debug_output"]:
+                print("🏠 未找到背景场景配置，跳过背景场景加载")
+            return True
+        
+        background_config = self.config.BACKGROUND_ENVIRONMENT
+        background_path = background_config.get("usd_path", "")
+        
+        if not background_path:
+            if self.config.DEBUG["enable_debug_output"]:
+                print("⚠️ 背景场景路径为空，跳过背景场景加载")
+            return True
+        
+        try:
+            print(f"🏠 正在加载背景场景: {background_path}")
+            
+            # 构建完整的背景场景路径（相对于住宅资产库）
+            full_background_path = self.get_asset_path(background_path)
+            
+            # 检查文件是否存在
+            if not os.path.exists(full_background_path):
+                print(f"❌ 背景场景文件不存在: {full_background_path}")
+                print(f"   请检查路径: {background_path}")
+                return False
+            
+            stage = self.world.stage
+            
+            # 创建背景场景prim
+            background_prim_path = "/World/BackgroundScene"
+            background_prim = stage.DefinePrim(background_prim_path, "Xform")
+            
+            # 添加USD引用
+            background_prim.GetReferences().AddReference(full_background_path)
+            
+            # 获取配置参数
+            position = background_config.get("position", [0.0, 0.0, 0.0])
+            rotation = background_config.get("rotation_z", 0.0)
+            scale = background_config.get("scale", 1.0)
+            
+            # 设置变换（背景场景通常不需要坐标缩放）
+            self._safe_set_transform_with_scale(
+                background_prim, 
+                position[0], position[1], position[2], 
+                rotation, 
+                scale
+            )
+            
+            print(f"✅ 背景场景加载完成: {background_path}")
+            if self.config.DEBUG["enable_debug_output"]:
+                print(f"   完整路径: {full_background_path}")
+                print(f"   位置: {position}")
+                print(f"   旋转: {rotation}°")
+                print(f"   缩放: {scale}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ 背景场景加载失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def create_osgt_scene(self):
         """创建OSGT四类物体场景（通用版，适配多场景）"""
         print("🏠 创建OSGT四类物体场景（通用+位置修正）...")
         
         try:
+            # 首先加载背景场景
+            background_success = self.load_background_scene()
+            if not background_success:
+                print("⚠️ 背景场景加载失败，继续使用默认场景")
+            
             stage = self.world.stage
             
             # O类 - 障碍物创建

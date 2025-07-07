@@ -44,6 +44,16 @@ class OSGTCleanupSystemConfig:
             ]
         }
         
+        self.BACKGROUND_ENVIRONMENT = {
+            # 场景usd文件路径（相对住宅资产库）
+            "usd_path": "Kitchen_set/Kitchen_set_instanced.usd",
+            # 缩放比例
+            "scale": 0.02,
+            # 位置 [x, y, z]
+            "position": [0.0, 0.0, 0.0],
+            # 旋转（绕z轴，单位度）
+            "rotation_z": 0.0
+        }
         # 自动检测资产路径
         self._detect_asset_paths()
         
@@ -118,9 +128,10 @@ class OSGTCleanupSystemConfig:
             "graspable_4": [425.0, 190.0, 0.05],        # 零件类
             "graspable_5": [-110.0, 440.0, 0.05],       # 设备类
             # 书籍等特殊可抓取物
-            "graspable_book_1": [-370.0, -400.0, 0.8],  # 桌面书籍
-            "graspable_book_2": [-350.0, -390.0, 0.8],  # 散落书本
-            "graspable_book_3": [-330.0, -410.0, 0.8],  # 文档资料
+            "graspable_book_1": [0, -390.0, 0.8],  # 散落书本
+            "graspable_book_3": [-330.0, -370.0, 0.8],  # 桌面书籍
+            "graspable_book_2": [-350.0, -410.0, 0.8],  # 文档资料
+            "spoon_1": [100.0, -300.0, 0.08],  # 勺子
         }
         
         # T类 - 任务区位置配置 (Task Areas)
@@ -172,14 +183,14 @@ class OSGTCleanupSystemConfig:
             
             # OSGT四类导航容差
             "tolerance_obstacles": 0.5,          # O类障碍物避让距离 (m)
-            "tolerance_sweepable": 1.2,         # S类可清扫物导航容差 (m)
-            "tolerance_graspable": 1.3,         # G类可抓取物导航容差 (m)
+            "tolerance_sweepable": 0.5,         # S类可清扫物导航容差 (m)
+            "tolerance_graspable": 0.5,         # G类可抓取物导航容差 (m)
             "tolerance_task_areas": 0.8,        # T类任务区容差 (m)
             
             # 导航超时配置
             "nav_timeout_sweepable": 45,         # S类导航超时 (s)
             "nav_timeout_graspable": 50,         # G类导航超时 (s)
-            "nav_timeout_task_areas": 25,        # T类导航超时 (s)
+            "nav_timeout_task_areas": 60,        # T类导航超时 (s)
             
             # 控制策略参数
             "angle_threshold_large": 2.5,       # 大角度阈值 (rad)
@@ -263,6 +274,7 @@ class OSGTCleanupSystemConfig:
                 "graspable_book_1": "Decor/Books/Book_01.usd",
                 "graspable_book_2": "Decor/Books/Book_02.usd", 
                 "graspable_book_3": "Decor/Books/Book_11.usd",
+                "spoon_1": "Kitchen_set/assets/Spoon/Spoon.geom.usd",  # 勺子
             },
             
             # T类 - 任务区配置 (基础形状表示功能区)
@@ -392,6 +404,36 @@ class OSGTCleanupSystemConfig:
         
         self._validate_paths()
     
+    # ==================== 背景场景配置方法 ====================
+    
+    def set_background_scene(self, usd_path, scale=1.0, position=None, rotation_z=0.0):
+        """设置背景场景"""
+        if position is None:
+            position = [0.0, 0.0, 0.0]
+        
+        self.BACKGROUND_ENVIRONMENT.update({
+            "usd_path": usd_path,
+            "scale": scale,
+            "position": position,
+            "rotation_z": rotation_z,
+        })
+        
+        print(f"🏠 设置背景场景: {usd_path}")
+        print(f"   缩放: {scale}")
+        print(f"   位置: {position}")
+        print(f"   旋转: {rotation_z}°")
+    
+    def disable_background_scene(self):
+        """禁用背景场景"""
+        self.BACKGROUND_ENVIRONMENT["usd_path"] = ""
+        print("🏠 背景场景已禁用")
+    
+    def enable_background_scene(self, usd_path=None):
+        """启用背景场景"""
+        if usd_path:
+            self.BACKGROUND_ENVIRONMENT["usd_path"] = usd_path
+        print(f"🏠 背景场景已启用: {self.BACKGROUND_ENVIRONMENT['usd_path']}")
+
     # ==================== OSGT便捷方法 ====================
     
     def get_full_asset_path(self, osgt_category, item_name):
@@ -504,194 +546,3 @@ class OSGTCleanupSystemConfig:
         print(f"⏱️ OSGT导航超时: S类 {self.NAVIGATION['nav_timeout_sweepable']}s, G类 {self.NAVIGATION['nav_timeout_graspable']}s")
         print("="*70)
 
-# ==================== OSGT快速配置预设 ====================
-
-class OSGTQuickConfigs:
-    """OSGT快速配置预设（场景适配版）"""
-    
-    @staticmethod
-    def residential_scene(username=None):
-        """家庭住宅场景配置"""
-        config = OSGTCleanupSystemConfig(username, "residential")
-        
-        # 家庭场景：减少障碍物密度，增加舒适度
-        config.OBSTACLES_POSITIONS = {
-            "living_table": [300.0, 150.0, 0.0, 0.0],      # 客厅茶几
-            "dining_chair": [280.0, 80.0, 0.0, 0.0],       # 餐椅
-            "sofa": [-300.0, 200.0, 0.0, 0.0],             # 沙发
-        }
-        
-        config.SWEEPABLE_POSITIONS = {
-            "food_crumb": [200.0, 100.0, 0.03],            # 食物碎渣
-            "dust_ball": [300.0, -100.0, 0.03],            # 灰尘团
-            "paper_scrap": [-200.0, 160.0, 0.01],          # 纸屑
-        }
-        
-        config.GRASPABLE_POSITIONS = {
-            "remote_control": [360.0, 240.0, 0.05],        # 遥控器
-            "toy": [-240.0, -200.0, 0.05],                 # 玩具
-        }
-        
-        return config
-    
-    @staticmethod
-    def school_scene(username=None):
-        """学校场景配置"""
-        config = OSGTCleanupSystemConfig(username, "school")
-        
-        # 学校场景：课桌椅密度高，教具分散
-        config.OBSTACLES_POSITIONS = {
-            "desk_1": [200.0, 100.0, 0.0, 0.0],            # 课桌1
-            "desk_2": [400.0, 100.0, 0.0, 0.0],            # 课桌2
-            "chair_1": [180.0, 80.0, 0.0, 0.0],            # 椅子1
-            "chair_2": [380.0, 80.0, 0.0, 0.0],            # 椅子2
-            "blackboard": [-400.0, 0.0, 0.0, 0.0],         # 黑板
-        }
-        
-        config.SWEEPABLE_POSITIONS = {
-            "chalk_dust": [150.0, 50.0, 0.03],             # 粉笔灰
-            "paper_ball": [350.0, 50.0, 0.03],             # 纸团
-            "eraser_bit": [-200.0, 80.0, 0.01],            # 橡皮屑
-        }
-        
-        config.GRASPABLE_POSITIONS = {
-            "textbook": [190.0, 120.0, 0.05],              # 教科书
-            "pencil_case": [390.0, 120.0, 0.05],           # 文具盒
-            "lab_equipment": [-180.0, -100.0, 0.05],       # 实验器材
-        }
-        
-        return config
-    
-    @staticmethod
-    def hospital_scene(username=None):
-        """医院场景配置"""
-        config = OSGTCleanupSystemConfig(username, "hospital")
-        
-        # 医院场景：洁污分区，无菌要求
-        config.OBSTACLES_POSITIONS = {
-            "hospital_bed": [300.0, 200.0, 0.0, 0.0],      # 病床
-            "medical_cart": [100.0, 100.0, 0.0, 0.0],      # 医疗推车
-            "monitor": [320.0, 180.0, 0.0, 0.0],           # 监护仪
-        }
-        
-        config.SWEEPABLE_POSITIONS = {
-            "medical_waste": [250.0, 150.0, 0.03],         # 医疗废料
-            "cotton_ball": [350.0, 150.0, 0.03],           # 棉球
-            "packaging": [-200.0, 100.0, 0.01],            # 包装废料
-        }
-        
-        config.GRASPABLE_POSITIONS = {
-            "medicine_bottle": [280.0, 220.0, 0.05],       # 药瓶
-            "medical_chart": [120.0, 120.0, 0.05],         # 病历夹
-            "syringe": [-150.0, -80.0, 0.05],              # 注射器
-        }
-        
-        # 医院场景需要更严格的容差
-        config.update_navigation(
-            tolerance_sweepable=0.8,
-            tolerance_graspable=0.9
-        )
-        
-        return config
-    
-    @staticmethod
-    def factory_scene(username=None):
-        """工厂场景配置"""
-        config = OSGTCleanupSystemConfig(username, "factory")
-        
-        # 工厂场景：设备密度极高，重型物品
-        config.OBSTACLES_POSITIONS = {
-            "machine_1": [400.0, 300.0, 0.0, 0.0],         # 生产设备1
-            "machine_2": [400.0, -300.0, 0.0, 0.0],        # 生产设备2
-            "conveyor": [0.0, 200.0, 0.0, 90.0],           # 传送带
-            "storage_rack": [-400.0, 0.0, 0.0, 0.0],       # 货架
-            "agv_station": [200.0, -200.0, 0.0, 45.0],     # AGV站点
-        }
-        
-        config.SWEEPABLE_POSITIONS = {
-            "metal_chip": [350.0, 250.0, 0.03],            # 金属碎屑
-            "plastic_bead": [450.0, 250.0, 0.03],          # 塑料颗粒
-            "oil_spot": [50.0, 180.0, 0.01],               # 油污
-            "dust": [-350.0, 50.0, 0.03],                  # 工业粉尘
-        }
-        
-        config.GRASPABLE_POSITIONS = {
-            "component": [380.0, 280.0, 0.05],             # 零部件
-            "tool": [420.0, 280.0, 0.05],                  # 工具
-            "packaging_box": [180.0, -180.0, 0.05],        # 包装箱
-            "spare_part": [-180.0, -50.0, 0.05],           # 备件
-        }
-        
-        # 工厂场景需要更大的容差和更长的超时
-        config.update_navigation(
-            tolerance_sweepable=1.5,
-            tolerance_graspable=1.6,
-            nav_timeout_sweepable=60,
-            nav_timeout_graspable=70
-        )
-        
-        return config
-    
-    @staticmethod
-    def debug_mode(username=None, scenario_type="residential"):
-        """OSGT调试模式配置"""
-        config = OSGTCleanupSystemConfig(username, scenario_type)
-        
-        config.DEBUG.update({
-            "enable_debug_output": True,
-            "show_robot_state": True,
-            "show_navigation_progress": True,
-            "show_grasp_details": True,
-            "progress_report_interval": 1.0,
-        })
-        
-        config.ROBOT_CONTROL.update({
-            "max_linear_velocity": 0.4,
-            "max_angular_velocity": 1.5,
-        })
-        
-        return config
-
-# ==================== 使用示例 ====================
-
-def example_usage():
-    """OSGT配置文件使用示例"""
-    
-    # 1. 使用默认配置（家庭住宅场景）
-    config = OSGTCleanupSystemConfig()
-    
-    # 2. 指定场景类型
-    # config = OSGTCleanupSystemConfig(username="your_username", scenario_type="hospital")
-    
-    # 3. 使用快速预设
-    # config = OSGTQuickConfigs.residential_scene("your_username")
-    # config = OSGTQuickConfigs.school_scene("your_username")
-    # config = OSGTQuickConfigs.hospital_scene("your_username")
-    # config = OSGTQuickConfigs.factory_scene("your_username")
-    
-    # 4. 修改OSGT缩放比例
-    config.update_scale(obstacles=0.02, sweepable_items=0.02)
-    
-    # 5. 添加新的OSGT物体位置
-    config.add_obstacle_position("new_machine", 500.0, 500.0, 0.0, 45.0)
-    config.add_sweepable_position("new_debris", 100.0, 360.0, 0.02)
-    config.add_graspable_position("new_tool", 300.0, 500.0, 0.05)
-    config.add_task_area_position("new_station", 600.0, 600.0, 0.0, 0.0)
-    
-    # 6. 切换场景类型
-    # config.set_scenario_type("factory")
-    
-    # 7. 调整机器人参数
-    config.update_robot_control(max_linear_velocity=0.6, max_angular_velocity=2.2)
-    
-    # 8. 调整OSGT导航参数
-    config.update_navigation(tolerance_sweepable=0.8, nav_timeout_sweepable=35)
-    
-    # 9. 打印配置摘要
-    config.print_summary()
-    
-    return config
-
-if __name__ == "__main__":
-    # 测试OSGT配置
-    config = example_usage()
