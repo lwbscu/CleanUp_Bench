@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-CUDA加速优化版Create-3+机械臂垃圾收集系统（高级抓取放下版）
-集成Auromix auro_sim风格的高级抓取策略
-支持CUDA加速、力控制反馈、自适应抓取和性能监控
-使用config.py进行参数管理，支持多用户环境
+OSGT四类物体标准室内清洁系统（通用版）
+O类-障碍物 | S类-可清扫物 | G类-可抓取物 | T类-任务区
+适配场景：家庭住宅、学校、医院、工厂等
+集成高级抓取策略、CUDA加速、力控制反馈
 """
 
 from isaacsim import SimulationApp
 
-# 先导入配置，然后初始化仿真
-from config import CleanupSystemConfig, QuickConfigs
+# 先导入OSGT配置，然后初始化仿真
+from config import OSGTCleanupSystemConfig, OSGTQuickConfigs
 import os
 
 # 获取用户名（支持多种方式）
@@ -21,12 +21,14 @@ username = (
     'user'                                       # 默认值
 )
 
-print(f"🔧 启动高级抓取清洁系统，用户: {username}")
+print(f"🔧 启动OSGT四类物体清洁系统，用户: {username}")
 
-# 根据需要选择配置
-config = CleanupSystemConfig(username)                    # 默认配置
-# config = QuickConfigs.small_scene(username)              # 小场景配置
-# config = QuickConfigs.performance_optimized(username)    # 性能优化配置
+# 根据需要选择配置和场景类型
+config = OSGTCleanupSystemConfig(username, "residential")         # 家庭住宅场景
+# config = OSGTQuickConfigs.residential_scene(username)           # 家庭住宅预设
+# config = OSGTQuickConfigs.school_scene(username)                # 学校场景预设
+# config = OSGTQuickConfigs.hospital_scene(username)              # 医院场景预设
+# config = OSGTQuickConfigs.factory_scene(username)               # 工厂场景预设
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
 COORDINATE_SCALE = 0.01  # 将几百的坐标缩放到几米的世界坐标
@@ -58,18 +60,18 @@ from isaacsim.core.utils.types import ArticulationAction
 from pxr import UsdLux, UsdPhysics, Gf, Usd
 import isaacsim.core.utils.prims as prim_utils
 
-# 导入简化导航系统
+# 导入OSGT导航系统（使用兼容性别名）
 from advanced_navigation import AdvancedNavigationSystem
 
-# 导入高级抓取放下系统
+# 导入OSGT高级抓取放下系统（使用兼容性别名）
 from pick_and_place import (
     AdvancedPickAndPlaceStrategy, 
     create_advanced_pick_and_place_system,
     GraspPhase
 )
 
-class ConfigurableCreate3CleanupSystem:
-    """基于配置文件的Create-3+机械臂室内清洁系统（高级抓取版）"""
+class OSGTCreate3CleanupSystem:
+    """基于OSGT四类物体标准的Create-3+机械臂室内清洁系统（通用版）"""
     
     def __init__(self, config):
         self.config = config
@@ -112,10 +114,12 @@ class ConfigurableCreate3CleanupSystem:
         self.current_linear_vel = 0.0
         self.current_angular_vel = 0.0
         
-        # 垃圾收集相关
-        self.small_trash_objects = []
-        self.large_trash_objects = []
-        self.collected_objects = []
+        # OSGT四类物体相关
+        self.obstacles_objects = []           # O类 - 障碍物
+        self.sweepable_objects = []          # S类 - 可清扫物 
+        self.graspable_objects = []          # G类 - 可抓取物
+        self.task_areas_objects = []         # T类 - 任务区
+        self.collected_objects = []          # 收集清单
         self.scene_objects = []
         
         # 高级抓取放下系统
@@ -128,7 +132,7 @@ class ConfigurableCreate3CleanupSystem:
         self.grid_resolution = config.NAVIGATION["grid_resolution"]
         self.map_size = config.NAVIGATION["map_size"]
         
-        # 性能监控（增强版）
+        # 性能监控（OSGT增强版）
         self.performance_stats = {
             'movement_commands_sent': 0,
             'successful_movements': 0,
@@ -136,6 +140,10 @@ class ConfigurableCreate3CleanupSystem:
             'total_navigation_time': 0.0,
             'total_grasp_attempts': 0,
             'successful_grasps': 0,
+            'osgt_obstacles_avoided': 0,
+            'osgt_sweepables_collected': 0,
+            'osgt_graspables_collected': 0,
+            'osgt_task_areas_visited': 0,
             'cuda_acceleration_used': False
         }
     
@@ -152,7 +160,7 @@ class ConfigurableCreate3CleanupSystem:
     def verify_assets(self):
         """验证所有必需的资产文件"""
         if self.config.DEBUG["enable_debug_output"]:
-            print("🔍 验证资产文件...")
+            print("🔍 验证OSGT资产文件...")
         
         # 验证机器人模型
         if os.path.exists(self.robot_usd_path):
@@ -168,21 +176,21 @@ class ConfigurableCreate3CleanupSystem:
             print(f"   ❌ 住宅资产库缺失: {self.residential_assets_root}")
             return False
         
-        # 验证关键资产文件
+        # 验证OSGT四类关键资产文件
         critical_assets = []
-        for category, items in self.config.ASSET_PATHS.items():
+        for osgt_category, items in self.config.ASSET_PATHS.items():
             for name, relative_path in items.items():
                 full_path = self.get_asset_path(relative_path)
                 if os.path.exists(full_path):
                     size_kb = os.path.getsize(full_path) / 1024
-                    scale = self.config.SCALE_CONFIG.get(category, 1.0)
-                    critical_assets.append(f"   ✅ {name}: {size_kb:.1f} KB (缩放: {scale:.2f})")
+                    scale = self.config.SCALE_CONFIG.get(osgt_category, 1.0)
+                    critical_assets.append(f"   ✅ {osgt_category}:{name}: {size_kb:.1f} KB (缩放: {scale:.2f})")
                 else:
-                    print(f"   ❌ 缺失资产: {name} -> {relative_path}")
+                    print(f"   ❌ 缺失OSGT资产: {osgt_category}:{name} -> {relative_path}")
                     return False
         
         if self.config.DEBUG["enable_debug_output"]:
-            print(f"✅ 资产验证通过，共 {len(critical_assets)} 个文件:")
+            print(f"✅ OSGT资产验证通过，共 {len(critical_assets)} 个文件:")
             for asset in critical_assets[:5]:
                 print(asset)
             if len(critical_assets) > 5:
@@ -191,13 +199,13 @@ class ConfigurableCreate3CleanupSystem:
         return True
     
     def initialize_isaac_sim(self):
-        """初始化Isaac Sim环境（CUDA优化）"""
-        print("🚀 正在初始化Isaac Sim环境（高级抓取+CUDA加速）...")
+        """初始化Isaac Sim环境（OSGT+CUDA优化）"""
+        print("🚀 正在初始化Isaac Sim环境（OSGT四类+CUDA加速）...")
         
         try:
             # 验证资产文件
             if not self.verify_assets():
-                print("❌ 资产验证失败，请检查文件路径")
+                print("❌ OSGT资产验证失败，请检查文件路径")
                 return False
             
             # 创建世界（使用配置的参数）
@@ -241,14 +249,14 @@ class ConfigurableCreate3CleanupSystem:
             
             # 初始化全知全能导航系统
             self.advanced_navigation = AdvancedNavigationSystem(self.config)
-            print("✅ 全知全能导航系统初始化完成")
+            print("✅ OSGT导航系统初始化完成")
             
             # 初始化高级抓取放下系统
             self.advanced_pick_place = create_advanced_pick_and_place_system(self.config)
             self.advanced_pick_place.set_world_reference(self.world)
-            print("✅ 高级抓取放下系统初始化完成")
+            print("✅ OSGT高级抓取放下系统初始化完成")
             
-            print("✅ Isaac Sim环境初始化完成（高级抓取+CUDA加速）")
+            print("✅ Isaac Sim环境初始化完成（OSGT四类+CUDA加速）")
             return True
             
         except Exception as e:
@@ -286,7 +294,7 @@ class ConfigurableCreate3CleanupSystem:
     
     def initialize_robot(self):
         """初始化Create-3+机械臂（配置驱动）"""
-        print("🤖 正在初始化Create-3+机械臂（高级抓取版）...")
+        print("🤖 正在初始化Create-3+机械臂（OSGT版）...")
         
         try:
             if self.config.DEBUG["enable_debug_output"]:
@@ -324,90 +332,95 @@ class ConfigurableCreate3CleanupSystem:
             traceback.print_exc()
             return False
     
-    def create_indoor_scene(self):
-        """创建室内清洁场景（使用配置文件，修正位置缩放）"""
-        print("🏠 创建室内清洁场景（配置驱动+位置修正）...")
+    def create_osgt_scene(self):
+        """创建OSGT四类物体场景（通用版，适配多场景）"""
+        print("🏠 创建OSGT四类物体场景（通用+位置修正）...")
         
         try:
             stage = self.world.stage
             
-            # 从配置读取家具位置和缩放
-            furniture_scale = self.config.SCALE_CONFIG["furniture"]
+            # O类 - 障碍物创建
+            print("🚧 创建O类障碍物...")
+            obstacle_scale = self.config.SCALE_CONFIG["obstacles"]
             if self.config.DEBUG["enable_debug_output"]:
-                print(f"🔧 家具缩放比例: {furniture_scale}")
-                print(f"🔧 坐标系缩放: {COORDINATE_SCALE}")
+                print(f"🔧 O类障碍物缩放比例: {obstacle_scale}")
             
-            for furniture_name, (x, y, z, rot) in self.config.FURNITURE_POSITIONS.items():
-                if furniture_name in self.config.ASSET_PATHS["furniture"]:
-                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["furniture"][furniture_name])
-                    prim_path = f"/World/Furniture/{furniture_name}"
+            for obstacle_name, (x, y, z, rot) in self.config.OBSTACLES_POSITIONS.items():
+                if obstacle_name in self.config.ASSET_PATHS["obstacles"]:
+                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["obstacles"][obstacle_name])
+                    prim_path = f"/World/Obstacles/{obstacle_name}"
                     
                     # 创建引用
-                    furniture_prim = stage.DefinePrim(prim_path, "Xform")
-                    furniture_prim.GetReferences().AddReference(usd_path)
-                    
-                    # 修正：使用坐标系缩放转换位置，但保持物体大小缩放
-                    world_x = x * COORDINATE_SCALE
-                    world_y = y * COORDINATE_SCALE
-                    world_z = z
-                    
-                    self._safe_set_transform_with_scale(furniture_prim, world_x, world_y, world_z, rot, furniture_scale)
-                    
-                    if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   ✅ 创建家具: {furniture_name} 配置位置: ({x}, {y}, {z}) -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {furniture_scale}")
-            
-            # 从配置读取书籍位置
-            book_scale = self.config.SCALE_CONFIG["books"]
-            if self.config.DEBUG["enable_debug_output"]:
-                print(f"📚 书籍缩放比例: {book_scale}")
-            
-            for book_name, (x, y, z) in self.config.BOOK_POSITIONS.items():
-                if book_name in self.config.ASSET_PATHS["books"]:
-                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["books"][book_name])
-                    prim_path = f"/World/Books/{book_name}"
-                    
-                    book_prim = stage.DefinePrim(prim_path, "Xform")
-                    book_prim.GetReferences().AddReference(usd_path)
+                    obstacle_prim = stage.DefinePrim(prim_path, "Xform")
+                    obstacle_prim.GetReferences().AddReference(usd_path)
                     
                     # 修正：使用坐标系缩放转换位置
                     world_x = x * COORDINATE_SCALE
                     world_y = y * COORDINATE_SCALE
                     world_z = z
                     
-                    self._safe_set_transform_with_scale(book_prim, world_x, world_y, world_z, 0.0, book_scale)
+                    self._safe_set_transform_with_scale(obstacle_prim, world_x, world_y, world_z, rot, obstacle_scale)
+                    
+                    # 创建障碍物对象（用于避障导航）
+                    obstacle_obj = self._create_object_wrapper(prim_path, f"obstacle_{obstacle_name}", [world_x, world_y, world_z])
+                    self.obstacles_objects.append(obstacle_obj)
                     
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   📚 放置书籍: {book_name} 配置位置: ({x}, {y}, {z}) -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {book_scale}")
+                        print(f"   🚧 O类障碍物: {obstacle_name} 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z})")
+                        
+            # T类 - 任务区创建
+            print("🎯 创建T类任务区...")
+            task_area_scale = self.config.SCALE_CONFIG["task_areas"]
             
-            print("✅ 室内场景创建完成（配置驱动+位置修正）")
+            for area_name, (x, y, z, rot) in self.config.TASK_AREAS_POSITIONS.items():
+                if area_name in self.config.ASSET_PATHS["task_areas"]:
+                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["task_areas"][area_name])
+                    prim_path = f"/World/TaskAreas/{area_name}"
+                    
+                    area_prim = stage.DefinePrim(prim_path, "Xform")
+                    area_prim.GetReferences().AddReference(usd_path)
+                    
+                    world_x = x * COORDINATE_SCALE
+                    world_y = y * COORDINATE_SCALE
+                    world_z = z
+                    
+                    self._safe_set_transform_with_scale(area_prim, world_x, world_y, world_z, rot, task_area_scale)
+                    
+                    area_obj = self._create_object_wrapper(prim_path, f"task_area_{area_name}", [world_x, world_y, world_z])
+                    self.task_areas_objects.append(area_obj)
+                    
+                    if self.config.DEBUG["enable_debug_output"]:
+                        print(f"   🎯 T类任务区: {area_name} 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z})")
+            
+            print("✅ OSGT场景创建完成（通用+位置修正）")
             return True
             
         except Exception as e:
-            print(f"❌ 创建室内场景失败: {e}")
+            print(f"❌ 创建OSGT场景失败: {e}")
             import traceback
             traceback.print_exc()
             return False
     
-    def create_cleanup_environment(self):
-        """创建清洁环境（使用配置文件，修正位置缩放）"""
-        print("🗑️ 创建清洁环境（配置驱动+位置修正）...")
+    def create_osgt_cleanup_environment(self):
+        """创建OSGT清洁环境（S类+G类物体）"""
+        print("🗑️ 创建OSGT清洁环境（S类+G类，修正位置缩放）...")
         
         try:
             stage = self.world.stage
             
-            # 从配置读取小垃圾位置和缩放
-            small_trash_scale = self.config.SCALE_CONFIG["small_trash"]
+            # S类 - 可清扫物创建
+            print("🧹 创建S类可清扫物...")
+            sweepable_scale = self.config.SCALE_CONFIG["sweepable_items"]
             if self.config.DEBUG["enable_debug_output"]:
-                print(f"🔸 小垃圾缩放比例: {small_trash_scale}")
+                print(f"🧹 S类可清扫物缩放比例: {sweepable_scale}")
             
-            # 创建小垃圾
-            for i, (name, pos) in enumerate(self.config.SMALL_TRASH_POSITIONS.items()):
-                if name in self.config.ASSET_PATHS["small_trash"]:
-                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["small_trash"][name])
-                    prim_path = f"/World/SmallTrash/{name}_{i}"
+            for i, (name, pos) in enumerate(self.config.SWEEPABLE_POSITIONS.items()):
+                if name in self.config.ASSET_PATHS["sweepable_items"]:
+                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["sweepable_items"][name])
+                    prim_path = f"/World/SweepableItems/{name}_{i}"
                     
-                    trash_prim = stage.DefinePrim(prim_path, "Xform")
-                    trash_prim.GetReferences().AddReference(usd_path)
+                    sweepable_prim = stage.DefinePrim(prim_path, "Xform")
+                    sweepable_prim.GetReferences().AddReference(usd_path)
                     
                     # 修正：使用坐标系缩放转换位置
                     world_x = pos[0] * COORDINATE_SCALE
@@ -415,27 +428,27 @@ class ConfigurableCreate3CleanupSystem:
                     world_z = pos[2]
                     world_pos = [world_x, world_y, world_z]
                     
-                    self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, small_trash_scale)
+                    self._safe_set_transform_with_scale(sweepable_prim, world_x, world_y, world_z, 0.0, sweepable_scale)
                     
-                    trash_obj = self._create_object_wrapper(prim_path, f"small_{name}_{i}", world_pos)
-                    self.small_trash_objects.append(trash_obj)
+                    sweepable_obj = self._create_object_wrapper(prim_path, f"sweepable_{name}_{i}", world_pos)
+                    self.sweepable_objects.append(sweepable_obj)
                     
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   📍 小垃圾: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {small_trash_scale}")
+                        print(f"   🧹 S类可清扫物: {name} 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z})")
             
-            # 从配置读取大垃圾位置和缩放
-            large_trash_scale = self.config.SCALE_CONFIG["large_trash"]
+            # G类 - 可抓取物创建
+            print("🦾 创建G类可抓取物...")
+            graspable_scale = self.config.SCALE_CONFIG["graspable_items"]
             if self.config.DEBUG["enable_debug_output"]:
-                print(f"🔹 大垃圾缩放比例: {large_trash_scale}")
+                print(f"🦾 G类可抓取物缩放比例: {graspable_scale}")
             
-            # 创建大垃圾
-            for i, (name, pos) in enumerate(self.config.LARGE_TRASH_POSITIONS.items()):
-                if name in self.config.ASSET_PATHS["large_trash"]:
-                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["large_trash"][name])
-                    prim_path = f"/World/LargeTrash/{name}_{i}"
+            for i, (name, pos) in enumerate(self.config.GRASPABLE_POSITIONS.items()):
+                if name in self.config.ASSET_PATHS["graspable_items"]:
+                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["graspable_items"][name])
+                    prim_path = f"/World/GraspableItems/{name}_{i}"
                     
-                    trash_prim = stage.DefinePrim(prim_path, "Xform")
-                    trash_prim.GetReferences().AddReference(usd_path)
+                    graspable_prim = stage.DefinePrim(prim_path, "Xform")
+                    graspable_prim.GetReferences().AddReference(usd_path)
                     
                     # 修正：使用坐标系缩放转换位置
                     world_x = pos[0] * COORDINATE_SCALE
@@ -443,22 +456,24 @@ class ConfigurableCreate3CleanupSystem:
                     world_z = pos[2]
                     world_pos = [world_x, world_y, world_z]
                     
-                    self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, large_trash_scale)
+                    self._safe_set_transform_with_scale(graspable_prim, world_x, world_y, world_z, 0.0, graspable_scale)
                     
-                    trash_obj = self._create_object_wrapper(prim_path, f"large_{name}_{i}", world_pos)
-                    self.large_trash_objects.append(trash_obj)
+                    graspable_obj = self._create_object_wrapper(prim_path, f"graspable_{name}_{i}", world_pos)
+                    self.graspable_objects.append(graspable_obj)
                     
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   🦾 大垃圾: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {large_trash_scale}")
+                        print(f"   🦾 G类可抓取物: {name} 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z})")
             
-            print(f"✅ 清洁环境创建完成（配置驱动+位置修正）:")
-            print(f"   - 小垃圾(吸附): {len(self.small_trash_objects)}个")
-            print(f"   - 大垃圾(高级抓取): {len(self.large_trash_objects)}个")
+            print(f"✅ OSGT清洁环境创建完成:")
+            print(f"   - 🚧 O类障碍物: {len(self.obstacles_objects)}个")
+            print(f"   - 🧹 S类可清扫物: {len(self.sweepable_objects)}个")
+            print(f"   - 🦾 G类可抓取物: {len(self.graspable_objects)}个")
+            print(f"   - 🎯 T类任务区: {len(self.task_areas_objects)}个")
             
             return True
             
         except Exception as e:
-            print(f"❌ 创建清洁环境失败: {e}")
+            print(f"❌ 创建OSGT清洁环境失败: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -937,22 +952,37 @@ class ConfigurableCreate3CleanupSystem:
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"停止机器人失败: {e}")
     
-    def smart_navigate_to_target(self, target_pos, max_time=None, tolerance=None):
-        """全知全能智能导航（无障碍物限制）"""
-        # 使用配置的默认值
+    def smart_navigate_to_target(self, target_pos, osgt_type="sweepable", max_time=None, tolerance=None):
+        """OSGT智能导航（根据物体类型调整参数）"""
+        # 使用OSGT配置的默认值
         if max_time is None:
-            max_time = self.config.NAVIGATION["nav_timeout_small"]
+            if osgt_type == "sweepable":
+                max_time = self.config.NAVIGATION["nav_timeout_sweepable"]
+            elif osgt_type == "graspable":
+                max_time = self.config.NAVIGATION["nav_timeout_graspable"]
+            elif osgt_type == "task_areas":
+                max_time = self.config.NAVIGATION["nav_timeout_task_areas"]
+            else:
+                max_time = self.config.NAVIGATION["nav_timeout_sweepable"]
+        
         if tolerance is None:
-            tolerance = self.config.NAVIGATION["tolerance_small_trash"]
+            if osgt_type == "sweepable":
+                tolerance = self.config.NAVIGATION["tolerance_sweepable"]
+            elif osgt_type == "graspable":
+                tolerance = self.config.NAVIGATION["tolerance_graspable"]
+            elif osgt_type == "task_areas":
+                tolerance = self.config.NAVIGATION["tolerance_task_areas"]
+            else:
+                tolerance = self.config.NAVIGATION["tolerance_sweepable"]
         
         try:
             if self.config.DEBUG["show_navigation_progress"]:
-                print(f"🎯 智能导航到目标: [{target_pos[0]:.3f}, {target_pos[1]:.3f}]")
+                print(f"🎯 OSGT导航到{osgt_type}目标: [{target_pos[0]:.3f}, {target_pos[1]:.3f}]")
             
             # 记录导航开始时间
             nav_start_time = time.time()
             
-            # 使用简化导航系统
+            # 使用OSGT导航系统（兼容性调用）
             success = self.advanced_navigation.navigate_to_target(
                 self, target_pos, max_time, tolerance
             )
@@ -963,26 +993,26 @@ class ConfigurableCreate3CleanupSystem:
             
             if success:
                 if self.config.DEBUG["show_navigation_progress"]:
-                    print(f"   ✅ 导航成功！用时: {nav_time:.1f}s")
+                    print(f"   ✅ OSGT导航成功！用时: {nav_time:.1f}s")
             else:
                 if self.config.DEBUG["show_navigation_progress"]:
-                    print(f"   ⚠️ 导航失败，用时: {nav_time:.1f}s")
+                    print(f"   ⚠️ OSGT导航失败，用时: {nav_time:.1f}s")
             
             return success
             
         except Exception as e:
-            print(f"导航失败: {e}")
+            print(f"OSGT导航失败: {e}")
             import traceback
             traceback.print_exc()
             return False
     
-    # ==================== 高级抓取方法（替换旧的抓取逻辑） ====================
+    # ==================== OSGT四类物体处理方法 ====================
     
-    def advanced_grasp_sequence(self, target_object) -> bool:
-        """高级抓取序列（替换原有的 precise_grasp_sequence）"""
+    def osgt_grasp_sequence(self, target_object) -> bool:
+        """OSGT高级抓取序列（替换原有的抓取逻辑）"""
         try:
             if self.config.DEBUG["show_grasp_details"]:
-                print("   🎯 开始高级抓取序列...")
+                print("   🎯 开始OSGT高级抓取序列...")
             
             # 获取目标位置
             target_position, _ = target_object.get_world_pose()
@@ -991,7 +1021,7 @@ class ConfigurableCreate3CleanupSystem:
             drop_location = target_position.copy()
             drop_location[2] = -1.0
             
-            # 使用高级抓取放下系统
+            # 使用OSGT高级抓取放下系统（兼容性调用）
             success = self.advanced_pick_place.execute_pick_and_place(
                 self.mobile_base, target_object, drop_location
             )
@@ -999,39 +1029,38 @@ class ConfigurableCreate3CleanupSystem:
             if success:
                 self.performance_stats['successful_grasps'] += 1
                 if self.config.DEBUG["show_grasp_details"]:
-                    print("   ✅ 高级抓取序列成功！")
+                    print("   ✅ OSGT高级抓取序列成功！")
             else:
                 if self.config.DEBUG["show_grasp_details"]:
-                    print("   ❌ 高级抓取序列失败")
+                    print("   ❌ OSGT高级抓取序列失败")
             
             self.performance_stats['total_grasp_attempts'] += 1
             return success
                 
         except Exception as e:
-            print(f"   ❌ 高级抓取序列异常: {e}")
+            print(f"   ❌ OSGT高级抓取序列异常: {e}")
             import traceback
             traceback.print_exc()
             self.performance_stats['total_grasp_attempts'] += 1
             return False
     
-    def collect_small_trash(self, trash_object):
-        """收集小垃圾（保持原有逻辑）"""
+    def collect_sweepable_item(self, sweepable_object):
+        """收集S类可清扫物（吸附收集）"""
         try:
-            trash_name = trash_object.name
-            print(f"🔥 收集小垃圾: {trash_name}")
+            item_name = sweepable_object.name
+            print(f"🧹 收集S类可清扫物: {item_name}")
             
-            trash_position = trash_object.get_world_pose()[0]
-            target_position = trash_position.copy()
+            item_position = sweepable_object.get_world_pose()[0]
+            target_position = item_position.copy()
             target_position[2] = 0.0
             
             if self.config.DEBUG["show_navigation_progress"]:
                 print(f"   目标位置: [{target_position[0]:.3f}, {target_position[1]:.3f}]")
             
-            # 使用配置的导航参数
+            # 使用OSGT导航参数
             nav_success = self.smart_navigate_to_target(
                 target_position, 
-                max_time=self.config.NAVIGATION["nav_timeout_small"], 
-                tolerance=self.config.NAVIGATION["tolerance_small_trash"]
+                osgt_type="sweepable"
             )
             
             if nav_success:
@@ -1039,66 +1068,112 @@ class ConfigurableCreate3CleanupSystem:
                 collected_pos = robot_pos.copy()
                 collected_pos[2] = -1.0
                 
-                trash_object.set_world_pose(collected_pos, trash_object.get_world_pose()[1])
-                self.collected_objects.append(trash_name)
+                sweepable_object.set_world_pose(collected_pos, sweepable_object.get_world_pose()[1])
+                self.collected_objects.append(item_name)
+                self.performance_stats['osgt_sweepables_collected'] += 1
                 
-                print(f"✅ 小垃圾 {trash_name} 吸附成功！")
+                print(f"✅ S类可清扫物 {item_name} 吸附成功！")
                 return True
             else:
-                print(f"⚠️ 小垃圾 {trash_name} 导航失败")
-                self.collected_objects.append(f"{trash_name}(导航失败)")
+                print(f"⚠️ S类可清扫物 {item_name} 导航失败")
+                self.collected_objects.append(f"{item_name}(导航失败)")
                 return False
                 
         except Exception as e:
-            print(f"收集小垃圾失败: {e}")
+            print(f"收集S类可清扫物失败: {e}")
             return False
     
-    def collect_large_trash(self, trash_object):
-        """收集大垃圾（使用高级抓取系统）"""
+    def collect_graspable_item(self, graspable_object):
+        """收集G类可抓取物（高级机械臂抓取）"""
         try:
-            trash_name = trash_object.name
-            print(f"🦾 收集大垃圾: {trash_name} (高级抓取)")
+            item_name = graspable_object.name
+            print(f"🦾 收集G类可抓取物: {item_name} (高级抓取)")
             
-            trash_position = trash_object.get_world_pose()[0]
-            target_position = trash_position.copy()
+            item_position = graspable_object.get_world_pose()[0]
+            target_position = item_position.copy()
             target_position[2] = 0.0
             
             if self.config.DEBUG["show_navigation_progress"]:
                 print(f"   目标位置: [{target_position[0]:.3f}, {target_position[1]:.3f}]")
             
-            # 使用配置的导航参数
+            # 使用OSGT导航参数
             nav_success = self.smart_navigate_to_target(
                 target_position, 
-                max_time=self.config.NAVIGATION["nav_timeout_large"], 
-                tolerance=self.config.NAVIGATION["tolerance_large_trash"]
+                osgt_type="graspable"
             )
             
             if nav_success:
-                # 使用高级抓取序列替换原有的简单抓取
-                grasp_success = self.advanced_grasp_sequence(trash_object)
+                # 使用OSGT高级抓取序列
+                grasp_success = self.osgt_grasp_sequence(graspable_object)
                 
                 if grasp_success:
-                    self.collected_objects.append(trash_name)
-                    print(f"✅ 大垃圾 {trash_name} 高级抓取成功！")
+                    self.collected_objects.append(item_name)
+                    self.performance_stats['osgt_graspables_collected'] += 1
+                    print(f"✅ G类可抓取物 {item_name} 高级抓取成功！")
                     return True
                 else:
-                    print(f"❌ 大垃圾 {trash_name} 高级抓取失败")
-                    self.collected_objects.append(f"{trash_name}(高级抓取失败)")
+                    print(f"❌ G类可抓取物 {item_name} 高级抓取失败")
+                    self.collected_objects.append(f"{item_name}(高级抓取失败)")
                     return False
             else:
-                print(f"⚠️ 大垃圾 {trash_name} 导航失败")
-                self.collected_objects.append(f"{trash_name}(导航失败)")
+                print(f"⚠️ G类可抓取物 {item_name} 导航失败")
+                self.collected_objects.append(f"{item_name}(导航失败)")
                 return False
                 
         except Exception as e:
-            print(f"收集大垃圾失败: {e}")
+            print(f"收集G类可抓取物失败: {e}")
             return False
     
-    def run_indoor_cleanup_demo(self):
-        """运行室内清洁演示（高级抓取版）"""
+    def visit_task_area(self, task_area_object):
+        """访问T类任务区（完成特定任务）"""
+        try:
+            area_name = task_area_object.name
+            print(f"🎯 访问T类任务区: {area_name}")
+            
+            area_position = task_area_object.get_world_pose()[0]
+            target_position = area_position.copy()
+            target_position[2] = 0.0
+            
+            if self.config.DEBUG["show_navigation_progress"]:
+                print(f"   目标位置: [{target_position[0]:.3f}, {target_position[1]:.3f}]")
+            
+            # 使用OSGT导航参数
+            nav_success = self.smart_navigate_to_target(
+                target_position, 
+                osgt_type="task_areas"
+            )
+            
+            if nav_success:
+                self.performance_stats['osgt_task_areas_visited'] += 1
+                print(f"✅ T类任务区 {area_name} 访问成功！")
+                
+                # 在任务区执行特定操作（根据任务区类型）
+                if "collection_zone" in area_name:
+                    print(f"   📦 在{area_name}执行物品卸载操作")
+                    time.sleep(1.0)  # 模拟卸载时间
+                elif "sorting_area" in area_name:
+                    print(f"   📋 在{area_name}执行分拣操作")
+                    time.sleep(1.5)  # 模拟分拣时间
+                elif "maintenance_station" in area_name:
+                    print(f"   🔧 在{area_name}执行维护操作")
+                    time.sleep(2.0)  # 模拟维护时间
+                
+                return True
+            else:
+                print(f"⚠️ T类任务区 {area_name} 导航失败")
+                return False
+                
+        except Exception as e:
+            print(f"访问T类任务区失败: {e}")
+            return False
+    
+    def run_osgt_cleanup_demo(self):
+        """运行OSGT四类物体清洁演示（通用版）"""
         print("\n" + "="*70)
-        print("🏠 高级抓取版Create-3+机械臂室内清洁系统演示")
-        print("配置文件管理 | 统一时间步 | CUDA加速抓取 | 力控制反馈")
+        print("🏠 OSGT四类物体标准室内清洁系统演示")
+        print(f"场景类型: {self.config.SCENARIO_TYPE.upper()}")
+        print("🚧 O类-障碍物 | 🧹 S类-可清扫物 | 🦾 G类-可抓取物 | 🎯 T类-任务区")
+        print("配置驱动 | 统一时间步 | CUDA加速抓取 | 力控制反馈")
         print("="*70)
         
         # 使用配置的稳定时间
@@ -1107,17 +1182,31 @@ class ConfigurableCreate3CleanupSystem:
         pos, _ = self.get_robot_pose()
         print(f"🔍 机器人初始位置: {pos}")
         
-        # 显示物体位置验证
-        print(f"\n🔍 物体位置验证:")
-        if self.small_trash_objects:
-            for i, obj in enumerate(self.small_trash_objects[:3]):
+        # 显示OSGT物体位置验证
+        print(f"\n🔍 OSGT物体位置验证:")
+        if self.obstacles_objects:
+            print(f"   🚧 O类障碍物 ({len(self.obstacles_objects)}个):")
+            for i, obj in enumerate(self.obstacles_objects[:3]):
                 obj_pos, _ = obj.get_world_pose()
-                print(f"   小垃圾 {obj.name}: {obj_pos[:2]}")
+                print(f"     - {obj.name}: {obj_pos[:2]}")
         
-        if self.large_trash_objects:
-            for i, obj in enumerate(self.large_trash_objects[:3]):
+        if self.sweepable_objects:
+            print(f"   🧹 S类可清扫物 ({len(self.sweepable_objects)}个):")
+            for i, obj in enumerate(self.sweepable_objects[:3]):
                 obj_pos, _ = obj.get_world_pose()
-                print(f"   大垃圾 {obj.name}: {obj_pos[:2]}")
+                print(f"     - {obj.name}: {obj_pos[:2]}")
+        
+        if self.graspable_objects:
+            print(f"   🦾 G类可抓取物 ({len(self.graspable_objects)}个):")
+            for i, obj in enumerate(self.graspable_objects[:3]):
+                obj_pos, _ = obj.get_world_pose()
+                print(f"     - {obj.name}: {obj_pos[:2]}")
+        
+        if self.task_areas_objects:
+            print(f"   🎯 T类任务区 ({len(self.task_areas_objects)}个):")
+            for i, obj in enumerate(self.task_areas_objects[:2]):
+                obj_pos, _ = obj.get_world_pose()
+                print(f"     - {obj.name}: {obj_pos[:2]}")
         
         # 机械臂姿态演示（根据配置决定是否运行）
         if self.config.EXPERIMENT["run_arm_pose_demo"]:
@@ -1131,64 +1220,73 @@ class ConfigurableCreate3CleanupSystem:
         self._move_arm_to_pose("home")
         
         collection_success = 0
-        total_items = len(self.small_trash_objects) + len(self.large_trash_objects)
+        total_items = len(self.sweepable_objects) + len(self.graspable_objects)
         
-        # 收集小垃圾
-        print(f"\n🔥 开始智能收集小垃圾...")
-        for i, trash in enumerate(self.small_trash_objects):
-            print(f"\n📍 目标 {i+1}/{len(self.small_trash_objects)}: {trash.name}")
-            if self.collect_small_trash(trash):
+        # 收集S类可清扫物
+        print(f"\n🧹 开始智能收集S类可清扫物...")
+        for i, sweepable in enumerate(self.sweepable_objects):
+            print(f"\n📍 S类目标 {i+1}/{len(self.sweepable_objects)}: {sweepable.name}")
+            if self.collect_sweepable_item(sweepable):
                 collection_success += 1
             time.sleep(self.config.EXPERIMENT["collection_delay"])
         
-        # 收集大垃圾（使用高级抓取）
-        print(f"\n🦾 开始高级抓取大垃圾...")
-        for i, trash in enumerate(self.large_trash_objects):
-            print(f"\n📍 目标 {i+1}/{len(self.large_trash_objects)}: {trash.name}")
-            if self.collect_large_trash(trash):
+        # 收集G类可抓取物（使用高级抓取）
+        print(f"\n🦾 开始高级抓取G类可抓取物...")
+        for i, graspable in enumerate(self.graspable_objects):
+            print(f"\n📍 G类目标 {i+1}/{len(self.graspable_objects)}: {graspable.name}")
+            if self.collect_graspable_item(graspable):
                 collection_success += 1
             time.sleep(self.config.EXPERIMENT["collection_delay"])
+        
+        # 访问T类任务区（可选）
+        if self.task_areas_objects:
+            print(f"\n🎯 访问T类任务区...")
+            for i, task_area in enumerate(self.task_areas_objects[:2]):  # 只访问前2个任务区
+                print(f"\n📍 T类目标 {i+1}: {task_area.name}")
+                self.visit_task_area(task_area)
+                time.sleep(self.config.EXPERIMENT["collection_delay"])
         
         # 返回家（使用配置的导航参数）
         print(f"\n🏠 快速返回起始位置...")
         home_position = np.array([0.0, 0.0, 0.0])
         self.smart_navigate_to_target(
             home_position, 
-            max_time=self.config.NAVIGATION["nav_timeout_home"],
-            tolerance=self.config.NAVIGATION["tolerance_home"]
+            osgt_type="task_areas"  # 使用任务区的导航参数
         )
         
         self._move_arm_to_pose("home")
         
-        # 显示结果
+        # 显示OSGT结果
         success_rate = (collection_success / total_items) * 100 if total_items > 0 else 0
         
-        print(f"\n📊 室内清洁结果:")
+        print(f"\n📊 OSGT四类物体清洁结果:")
         print(f"   成功收集: {collection_success}/{total_items} ({success_rate:.1f}%)")
+        print(f"   🧹 S类收集: {self.performance_stats['osgt_sweepables_collected']}个")
+        print(f"   🦾 G类收集: {self.performance_stats['osgt_graspables_collected']}个")
+        print(f"   🎯 T类访问: {self.performance_stats['osgt_task_areas_visited']}个")
         print(f"   收集清单: {', '.join(self.collected_objects)}")
         
         # 显示性能统计
-        self._print_performance_stats()
+        self._print_osgt_performance_stats()
         
-        # 显示导航统计
+        # 显示OSGT导航统计（兼容性调用）
         if self.advanced_navigation:
             self.advanced_navigation.print_stats()
         
-        # 显示高级抓取统计
+        # 显示OSGT高级抓取统计（兼容性调用）
         if self.advanced_pick_place:
             self.advanced_pick_place.print_performance_report()
         
-        # 显示配置总结
+        # 显示OSGT配置总结
         self.config.print_summary()
         
-        print("\n✅ 高级抓取版室内清洁演示完成！")
+        print("\n✅ OSGT四类物体清洁演示完成！")
         print("💡 要调整参数，请编辑 config.py 文件")
-        print("🦾 已集成高级抓取系统，支持CUDA加速和力控制反馈")
-        print("🔧 统一时间步，解决物理场景步进不一致问题")
-        print("🗺️ 无障碍物限制，直接路径规划")
+        print("🏢 通用设计，适配家庭、学校、医院、工厂等场景")
+        print("🔧 O类避障 | S类吸附 | G类精确抓取 | T类任务执行")
     
-    def _print_performance_stats(self):
-        """打印性能统计（增强版）"""
+    def _print_osgt_performance_stats(self):
+        """打印OSGT性能统计（增强版）"""
         stats = self.performance_stats
         success_rate = 0
         if stats['movement_commands_sent'] > 0:
@@ -1198,7 +1296,7 @@ class ConfigurableCreate3CleanupSystem:
         if stats['total_grasp_attempts'] > 0:
             grasp_success_rate = (stats['successful_grasps'] / stats['total_grasp_attempts']) * 100
         
-        print(f"\n🚀 系统性能统计:")
+        print(f"\n🚀 OSGT系统性能统计:")
         print(f"   移动命令发送: {stats['movement_commands_sent']}")
         print(f"   成功移动: {stats['successful_movements']}")
         print(f"   移动成功率: {success_rate:.1f}%")
@@ -1206,6 +1304,9 @@ class ConfigurableCreate3CleanupSystem:
         print(f"   抓取尝试: {stats['total_grasp_attempts']}")
         print(f"   成功抓取: {stats['successful_grasps']}")
         print(f"   抓取成功率: {grasp_success_rate:.1f}%")
+        print(f"   🧹 S类收集成功: {stats['osgt_sweepables_collected']}")
+        print(f"   🦾 G类收集成功: {stats['osgt_graspables_collected']}")
+        print(f"   🎯 T类访问成功: {stats['osgt_task_areas_visited']}")
         
         if stats['total_navigation_time'] > 0:
             avg_speed = stats['total_distance_traveled'] / stats['total_navigation_time']
@@ -1225,20 +1326,20 @@ class ConfigurableCreate3CleanupSystem:
             self._stop_robot()
             if self.world:
                 self.world.stop()
-            print("🧹 高级抓取清洁系统清理完成")
+            print("🧹 OSGT清洁系统清理完成")
         except Exception as e:
             print(f"清理时出错: {e}")
 
 def main():
-    """主函数（高级抓取优化版）"""
+    """主函数（OSGT四类物体版）"""
     
-    # 显示配置摘要
+    # 显示OSGT配置摘要
     config.print_summary()
     
-    system = ConfigurableCreate3CleanupSystem(config)
+    system = OSGTCreate3CleanupSystem(config)
     
     try:
-        print("🚀 启动高级抓取版室内清洁系统（CUDA加速）...")
+        print("🚀 启动OSGT四类物体清洁系统（通用版+CUDA加速）...")
         
         # 高效初始化
         success = system.initialize_isaac_sim()
@@ -1252,9 +1353,9 @@ def main():
             print("❌ 机器人初始化失败")
             return
         
-        success = system.create_indoor_scene()
+        success = system.create_osgt_scene()
         if not success:
-            print("❌ 室内场景创建失败")
+            print("❌ OSGT场景创建失败")
             return
         
         success = system.setup_post_load()
@@ -1262,28 +1363,27 @@ def main():
             print("❌ 后加载设置失败")
             return
         
-        success = system.create_cleanup_environment()
+        success = system.create_osgt_cleanup_environment()
         if not success:
-            print("❌ 清洁环境创建失败")
+            print("❌ OSGT清洁环境创建失败")
             return
         
         system._wait_for_stability(2.0)
         
-        # 运行演示
-        system.run_indoor_cleanup_demo()
+        # 运行OSGT演示
+        system.run_osgt_cleanup_demo()
         
         # 保持系统运行
         print("\n💡 按 Ctrl+C 退出演示")
         print("💡 配置文件: config.py")
-        print("🦾 已启用高级抓取系统：CUDA加速 + 力控制反馈")
-        print("🔧 统一物理和渲染时间步，解决步进不一致问题")
-        print("🗺️ 无障碍物限制的路径规划")
+        print("🏢 OSGT四类标准：O类避障 | S类吸附 | G类精确抓取 | T类任务执行")
+        print("🌐 通用设计，适配家庭、学校、医院、工厂等场景")
         try:
             while True:
                 system.world.step(render=True)
                 time.sleep(0.016)
         except KeyboardInterrupt:
-            print("\n👋 退出高级抓取演示...")
+            print("\n👋 退出OSGT四类物体演示...")
         
     except Exception as e:
         print(f"❌ 演示过程中发生错误: {e}")
