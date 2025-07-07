@@ -24,7 +24,7 @@ username = (
 print(f"🔧 启动OSGT四类物体清洁系统，用户: {username}")
 
 # 根据需要选择配置和场景类型
-config = OSGTCleanupSystemConfig(username, "residential")         # 家庭住宅场景
+config = OSGTCleanupSystemConfig(username, "hospital")         # 家庭住宅场景
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
 COORDINATE_SCALE = 0.01  # 将几百的坐标缩放到几米的世界坐标
@@ -337,7 +337,7 @@ class OSGTCreate3CleanupSystem:
         
         background_config = self.config.BACKGROUND_ENVIRONMENT
         background_path = background_config.get("usd_path", "")
-        
+        # background_path = "/home/getting/isaacsim_assets/Assets/Isaac/4.5/Isaac/Environments/Hospital/hospital.usd"
         if not background_path:
             if self.config.DEBUG["enable_debug_output"]:
                 print("⚠️ 背景场景路径为空，跳过背景场景加载")

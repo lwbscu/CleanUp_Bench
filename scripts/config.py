@@ -11,7 +11,7 @@ import os
 class OSGTCleanupSystemConfig:
     """OSGT标准清洁系统配置类（四类物体通用版）"""
 
-    def __init__(self, username=None, scenario_type="residential"):
+    def __init__(self, username=None, scenario_type="hospital"):
         # ==================== 用户配置 ====================
         if username is None:
             username = (
@@ -45,10 +45,10 @@ class OSGTCleanupSystemConfig:
         }
         
         self.BACKGROUND_ENVIRONMENT = {
-            # 场景usd文件路径（相对住宅资产库）
-            "usd_path": "Kitchen_set/Kitchen_set_instanced.usd",
+            # 场景usd文件路径（相对Hospital库）
+            "usd_path": "My_asset/background/Hospital.usd",
             # 缩放比例
-            "scale": 0.02,
+            "scale": 1,
             # 位置 [x, y, z]
             "position": [0.0, 0.0, 0.0],
             # 旋转（绕z轴，单位度）
@@ -61,7 +61,7 @@ class OSGTCleanupSystemConfig:
         self.PATHS = {
             "residential_assets_root": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "NVIDIA/Assets/ArchVis/Residential"
+                "NVIDIA/Assets/ArchVis/Hospital"
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
@@ -110,24 +110,24 @@ class OSGTCleanupSystemConfig:
             # 格式: "可清扫物名": [x, y, z]
             # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
             # "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
-            "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
-            "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
+            # "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
+            # "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
             
-            "sweepable_5": [667.0, 80.0, 0.015],     
+            # "sweepable_5": [667.0, 80.0, 0.015],     
             
-            "sweepable_7": [-424, -580.0, 0.03],     
+            # "sweepable_7": [-424, -580.0, 0.03],     
         }
         
         # G类 - 可抓取物位置配置 (Graspable Items)
         self.GRASPABLE_POSITIONS = {
             # 格式: "可抓取物名": [x, y, z]
             # 工具、容器、书籍、零件等需要机械臂抓取的物体
-            "orange2": [680.0, 165.0, 0.1],
-            "lemon2": [505.0, -266.0, 0.1],
-            "tin_can": [240.0, -75.0, 0.05],
-            "bottle": [650, -44, 0.1],
-            "cup": [332, 33, 0.1],
-            "fork": [-316, -391, 0.1],
+            # "orange2": [680.0, 165.0, 0.1],
+            # "lemon2": [505.0, -266.0, 0.1],
+            # "tin_can": [240.0, -75.0, 0.05],
+            # "bottle": [650, -44, 0.1],
+            # "cup": [332, 33, 0.1],
+            # "fork": [-316, -391, 0.1],
         }
         
         # T类 - 任务区位置配置 (Task Areas)
@@ -240,62 +240,26 @@ class OSGTCleanupSystemConfig:
         self.ASSET_PATHS = {
             # O类 - 障碍物配置 (通用环境障碍)
             "obstacles": {
-                "obstacle_1": "Furniture/Desks/Desk_01.usd",          # 桌面/工作台
-                "obstacle_2": "Furniture/Chairs/Chair_Desk.usd",      # 座椅/推车
-                "obstacle_3": "Furniture/CoffeeTables/Midtown.usd",   # 中央设施
-                "obstacle_4": "Furniture/EndTables/Festus01.usd",     # 边角设备
-                "obstacle_5": "Furniture/SofaTables/Ellisville.usd",  # 存储设施
-                "obstacle_6": "Furniture/Bookshelves/Fenton.usd",     # 大型设备
+                # 基本的障碍物资产
+                # "obstacle_1": "Furniture/Desks/Desk_01.usd",
             },
             
-           
             # S类 - 可清扫物配置 (小颗粒吸附收集)
             "sweepable_items": {
-                "sweepable_1": "Decor/Tchotchkes/Orange_01.usd",      # 有机碎渣
-                "sweepable_2": "Decor/Tchotchkes/Orange_02.usd",      # 食物残渣
-                "sweepable_3": "Decor/Tchotchkes/Lemon_01.usd",       # 小型碎片
-                "sweepable_4": "Decor/Tchotchkes/Lemon_02.usd",       # 细小颗粒
-                "sweepable_5": "Decor/Coasters/Coaster_Hexagon.usd",  # 薄片物
-                "sweepable_6": "Misc/Supplies/Eraser.usd",            # 橡胶碎片
-                "sweepable_7": "Entertainment/Games/Solid_Marble.usd", # 滚珠颗粒
+                # 基本的可清扫物资产
+                # "sweepable_1": "Decor/Tchotchkes/Orange_01.usd",
             },
             
             # G类 - 可抓取物配置 (机械臂精确抓取)
             "graspable_items": {
-                "graspable_1": "Food/Containers/TinCan.usd",          # 容器类
-                "graspable_2": "Food/Containers/MasonJar.usd",        # 瓶罐类
-                "graspable_3": "Misc/Supplies/MechanicalPencil.usd",  # 工具类
-                # 书籍文档类
-                "graspable_book_1": "Decor/Books/Book_01.usd",
-                "graspable_book_2": "Decor/Books/Book_02.usd", 
-                "graspable_book_3": "Decor/Books/Book_11.usd",
-                "spoon_1": "Kitchen_set/assets/Spoon/Spoon.geom.usd",  # 勺子
-
-                "plate": "Kitchen_set/assets/Plate/Plate.usd",
-                "bowl": "Kitchen_set/assets/Bowl/Bowl.usd",
-                "cup": "Kitchen_set/assets/Cup/Cup.usd",
-                "pan": "Kitchen_set/assets/Pan/Pan.usd",
-                "bottle": "Kitchen_set/assets/Bottle/Bottle.usd",
-                "spoon": "Kitchen_set/assets/Spoon/Spoon.usd",
-                "fork": "Kitchen_set/assets/Fork/Fork.usd",
-                "cheerio": "Kitchen_set/assets/Cheerio/Cheerio.usd",
-                "paper_small": "Kitchen_set/assets/PaperSmall/PaperSmall.usd",
-                "crayon": "Kitchen_set/assets/Crayon/Crayon.usd",
-                "tin_can": "Food/Containers/TinCan.usd",
-                "mason_jar": "Food/Containers/MasonJar.usd",
-                "pencil": "Misc/Supplies/MechanicalPencil.usd",
-                "dice_d6": "Entertainment/Games/DiceSet/D6.usd",
-                "dice_d20": "Entertainment/Games/DiceSet/D20.usd",
+                # 基本的可抓取物资产
+                # "graspable_1": "Food/Containers/TinCan.usd",
             },
             
             # T类 - 任务区配置 (基础形状表示功能区)
             "task_areas": {
-                "collection_zone_s": "Furniture/Desks/Desk_01.usd",   # S类回收台
-                "collection_zone_g": "Furniture/Desks/Desk_01.usd",   # G类存放台
-                "sorting_area": "Furniture/CoffeeTables/Midtown.usd",  # 分拣中心
-                "maintenance_station": "Furniture/EndTables/Festus01.usd", # 维护站点
-
-
+                # 基本的任务区资产
+                # "collection_zone_s": "Furniture/Desks/Desk_01.usd",
             }
         }
         
