@@ -9,7 +9,7 @@ CUDA加速优化版Create-3+机械臂垃圾收集系统（高级抓取放下版�
 from isaacsim import SimulationApp
 
 # 先导入配置，然后初始化仿真
-from config import CleanupSystemConfig, QuickConfigs
+from config import CleanupSystemConfig
 import os
 
 # 获取用户名（支持多种方式）
@@ -24,7 +24,9 @@ username = (
 print(f"🔧 启动高级抓取清洁系统，用户: {username}")
 
 # 根据需要选择配置
-config = CleanupSystemConfig(username)                    # 默认配置
+config = CleanupSystemConfig(username)                    # 默认住宅配置
+#config = QuickConfigs.kitchen_scene(username)              # 厨房场景配置
+# config = QuickConfigs.simple_kitchen_scene(username)     # 简化厨房场景配置
 # config = QuickConfigs.small_scene(username)              # 小场景配置
 # config = QuickConfigs.performance_optimized(username)    # 性能优化配置
 
@@ -175,6 +177,7 @@ class ConfigurableCreate3CleanupSystem:
                 full_path = self.get_asset_path(relative_path)
                 if os.path.exists(full_path):
                     size_kb = os.path.getsize(full_path) / 1024
+                    # 新增厨房相关类别的缩放支持
                     scale = self.config.SCALE_CONFIG.get(category, 1.0)
                     critical_assets.append(f"   ✅ {name}: {size_kb:.1f} KB (缩放: {scale:.2f})")
                 else:
@@ -330,58 +333,70 @@ class ConfigurableCreate3CleanupSystem:
         
         try:
             stage = self.world.stage
-            
-            # 从配置读取家具位置和缩放
+            # 1. 加载厨房大环境（Kitchen_set_instanced.usd）——用和家具一样的方式
+            kitchen_env_cfg = self.config.KITCHEN_ENVIRONMENT
+            from pxr import UsdGeom, Usd, Gf
+            kitchen_usd_path = os.path.join(self.config.PATHS["residential_assets_root"], kitchen_env_cfg["usd_path"])
+            kitchen_prim_path = "/World/KitchenEnvironment"
+            kitchen_prim = stage.DefinePrim(kitchen_prim_path, "Xform")
+            kitchen_prim.GetReferences().AddReference(kitchen_usd_path)
+            kitchen_x, kitchen_y, kitchen_z = kitchen_env_cfg["position"]
+            kitchen_scale = kitchen_env_cfg["scale"]
+            kitchen_rot = kitchen_env_cfg["rotation_z"]
+            self._safe_set_transform_with_scale(kitchen_prim, kitchen_x, kitchen_y, kitchen_z, kitchen_rot, kitchen_scale)
+
+            # 2. 普通家具
             furniture_scale = self.config.SCALE_CONFIG["furniture"]
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"🔧 家具缩放比例: {furniture_scale}")
                 print(f"🔧 坐标系缩放: {COORDINATE_SCALE}")
-            
             for furniture_name, (x, y, z, rot) in self.config.FURNITURE_POSITIONS.items():
                 if furniture_name in self.config.ASSET_PATHS["furniture"]:
                     usd_path = self.get_asset_path(self.config.ASSET_PATHS["furniture"][furniture_name])
                     prim_path = f"/World/Furniture/{furniture_name}"
-                    
-                    # 创建引用
                     furniture_prim = stage.DefinePrim(prim_path, "Xform")
                     furniture_prim.GetReferences().AddReference(usd_path)
-                    
-                    # 修正：使用坐标系缩放转换位置，但保持物体大小缩放
                     world_x = x * COORDINATE_SCALE
                     world_y = y * COORDINATE_SCALE
                     world_z = z
-                    
                     self._safe_set_transform_with_scale(furniture_prim, world_x, world_y, world_z, rot, furniture_scale)
-                    
                     if self.config.DEBUG["enable_debug_output"]:
                         print(f"   ✅ 创建家具: {furniture_name} 配置位置: ({x}, {y}, {z}) -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {furniture_scale}")
-            
-            # 从配置读取书籍位置
+
+            # 3. 厨房家具
+            kitchen_furniture_scale = self.config.SCALE_CONFIG["kitchen_furniture"]
+            for kitchen_furniture_name, (x, y, z, rot) in self.config.KITCHEN_FURNITURE_POSITIONS.items():
+                if kitchen_furniture_name in self.config.ASSET_PATHS.get("kitchen_furniture", {}):
+                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["kitchen_furniture"][kitchen_furniture_name])
+                    prim_path = f"/World/KitchenFurniture/{kitchen_furniture_name}"
+                    furniture_prim = stage.DefinePrim(prim_path, "Xform")
+                    furniture_prim.GetReferences().AddReference(usd_path)
+                    world_x = x * COORDINATE_SCALE
+                    world_y = y * COORDINATE_SCALE
+                    world_z = z
+                    self._safe_set_transform_with_scale(furniture_prim, world_x, world_y, world_z, rot, kitchen_furniture_scale)
+                    if self.config.DEBUG["enable_debug_output"]:
+                        print(f"   ✅ 创建厨房家具: {kitchen_furniture_name} 配置位置: ({x}, {y}, {z}) -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {kitchen_furniture_scale}")
+
+            # 4. 书籍
             book_scale = self.config.SCALE_CONFIG["books"]
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"📚 书籍缩放比例: {book_scale}")
-            
             for book_name, (x, y, z) in self.config.BOOK_POSITIONS.items():
                 if book_name in self.config.ASSET_PATHS["books"]:
                     usd_path = self.get_asset_path(self.config.ASSET_PATHS["books"][book_name])
                     prim_path = f"/World/Books/{book_name}"
-                    
                     book_prim = stage.DefinePrim(prim_path, "Xform")
                     book_prim.GetReferences().AddReference(usd_path)
-                    
-                    # 修正：使用坐标系缩放转换位置
                     world_x = x * COORDINATE_SCALE
                     world_y = y * COORDINATE_SCALE
                     world_z = z
-                    
                     self._safe_set_transform_with_scale(book_prim, world_x, world_y, world_z, 0.0, book_scale)
-                    
                     if self.config.DEBUG["enable_debug_output"]:
                         print(f"   📚 放置书籍: {book_name} 配置位置: ({x}, {y}, {z}) -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {book_scale}")
-            
-            print("✅ 室内场景创建完成（配置驱动+位置修正）")
+
+            print("✅ 室内场景创建完成（配置驱动+位置修正+厨房环境）")
             return True
-            
         except Exception as e:
             print(f"❌ 创建室内场景失败: {e}")
             import traceback
@@ -401,27 +416,38 @@ class ConfigurableCreate3CleanupSystem:
                 print(f"🔸 小垃圾缩放比例: {small_trash_scale}")
             
             # 创建小垃圾
+            # 普通小垃圾
             for i, (name, pos) in enumerate(self.config.SMALL_TRASH_POSITIONS.items()):
                 if name in self.config.ASSET_PATHS["small_trash"]:
                     usd_path = self.get_asset_path(self.config.ASSET_PATHS["small_trash"][name])
                     prim_path = f"/World/SmallTrash/{name}_{i}"
-                    
                     trash_prim = stage.DefinePrim(prim_path, "Xform")
                     trash_prim.GetReferences().AddReference(usd_path)
-                    
-                    # 修正：使用坐标系缩放转换位置
                     world_x = pos[0] * COORDINATE_SCALE
                     world_y = pos[1] * COORDINATE_SCALE
                     world_z = pos[2]
                     world_pos = [world_x, world_y, world_z]
-                    
                     self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, small_trash_scale)
-                    
                     trash_obj = self._create_object_wrapper(prim_path, f"small_{name}_{i}", world_pos)
                     self.small_trash_objects.append(trash_obj)
-                    
                     if self.config.DEBUG["enable_debug_output"]:
                         print(f"   📍 小垃圾: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {small_trash_scale}")
+            # 厨房小物品
+            for i, (name, pos) in enumerate(self.config.KITCHEN_SMALL_ITEMS_POSITIONS.items()):
+                if name in self.config.ASSET_PATHS.get("kitchen_small_items", {}):
+                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["kitchen_small_items"][name])
+                    prim_path = f"/World/KitchenSmallItems/{name}_{i}"
+                    trash_prim = stage.DefinePrim(prim_path, "Xform")
+                    trash_prim.GetReferences().AddReference(usd_path)
+                    world_x = pos[0] * COORDINATE_SCALE
+                    world_y = pos[1] * COORDINATE_SCALE
+                    world_z = pos[2]
+                    world_pos = [world_x, world_y, world_z]
+                    self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, self.config.SCALE_CONFIG["kitchen_small_items"])
+                    trash_obj = self._create_object_wrapper(prim_path, f"kitchen_small_{name}_{i}", world_pos)
+                    self.small_trash_objects.append(trash_obj)
+                    if self.config.DEBUG["enable_debug_output"]:
+                        print(f"   📍 厨房小物品: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {self.config.SCALE_CONFIG['kitchen_small_items']}")
             
             # 从配置读取大垃圾位置和缩放
             large_trash_scale = self.config.SCALE_CONFIG["large_trash"]
@@ -429,27 +455,38 @@ class ConfigurableCreate3CleanupSystem:
                 print(f"🔹 大垃圾缩放比例: {large_trash_scale}")
             
             # 创建大垃圾
+            # 普通大垃圾
             for i, (name, pos) in enumerate(self.config.LARGE_TRASH_POSITIONS.items()):
                 if name in self.config.ASSET_PATHS["large_trash"]:
                     usd_path = self.get_asset_path(self.config.ASSET_PATHS["large_trash"][name])
                     prim_path = f"/World/LargeTrash/{name}_{i}"
-                    
                     trash_prim = stage.DefinePrim(prim_path, "Xform")
                     trash_prim.GetReferences().AddReference(usd_path)
-                    
-                    # 修正：使用坐标系缩放转换位置
                     world_x = pos[0] * COORDINATE_SCALE
                     world_y = pos[1] * COORDINATE_SCALE
                     world_z = pos[2]
                     world_pos = [world_x, world_y, world_z]
-                    
                     self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, large_trash_scale)
-                    
                     trash_obj = self._create_object_wrapper(prim_path, f"large_{name}_{i}", world_pos)
                     self.large_trash_objects.append(trash_obj)
-                    
                     if self.config.DEBUG["enable_debug_output"]:
-                        print(f"   🦾 大垃圾: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {large_trash_scale}")
+                        print(f"   📍 大垃圾: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {large_trash_scale}")
+            # 厨房大物品
+            for i, (name, pos) in enumerate(self.config.KITCHEN_LARGE_ITEMS_POSITIONS.items()):
+                if name in self.config.ASSET_PATHS.get("kitchen_large_items", {}):
+                    usd_path = self.get_asset_path(self.config.ASSET_PATHS["kitchen_large_items"][name])
+                    prim_path = f"/World/KitchenLargeItems/{name}_{i}"
+                    trash_prim = stage.DefinePrim(prim_path, "Xform")
+                    trash_prim.GetReferences().AddReference(usd_path)
+                    world_x = pos[0] * COORDINATE_SCALE
+                    world_y = pos[1] * COORDINATE_SCALE
+                    world_z = pos[2]
+                    world_pos = [world_x, world_y, world_z]
+                    self._safe_set_transform_with_scale(trash_prim, world_x, world_y, world_z, 0.0, self.config.SCALE_CONFIG["kitchen_large_items"])
+                    trash_obj = self._create_object_wrapper(prim_path, f"kitchen_large_{name}_{i}", world_pos)
+                    self.large_trash_objects.append(trash_obj)
+                    if self.config.DEBUG["enable_debug_output"]:
+                        print(f"   📍 厨房大物品: {name} 配置位置: {pos} -> 世界位置: ({world_x:.2f}, {world_y:.2f}, {world_z}) 缩放: {self.config.SCALE_CONFIG['kitchen_large_items']}")
             
             print(f"✅ 清洁环境创建完成（配置驱动+位置修正）:")
             print(f"   - 小垃圾(吸附): {len(self.small_trash_objects)}个")

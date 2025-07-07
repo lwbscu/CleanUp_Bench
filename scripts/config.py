@@ -52,6 +52,17 @@ class CleanupSystemConfig:
                 f"/usr/local/isaac_sim",
             ]
         }
+        # ==================== 厨房整体环境配置 ====================
+        self.KITCHEN_ENVIRONMENT = {
+            # 场景usd文件路径（相对住宅资产库）
+            "usd_path": "Kitchen_set/Kitchen_set_instanced.usd",
+            # 缩放比例
+            "scale": 1.0,
+            # 位置 [x, y, z]
+            "position": [0.0, 0.0, 0.0],
+            # 旋转（绕z轴，单位度）
+            "rotation_z": 0.0
+        }
         
         # 自动检测资产路径
         self._detect_asset_paths()
@@ -81,10 +92,18 @@ class CleanupSystemConfig:
         self.SCALE_CONFIG = {
             # 家具缩放 - 如果家具太大，减小这个值
             "furniture": 0.02,        # 2% (推荐范围: 0.02-0.05)
-            
-            # 垃圾物品缩放
+
+            # 厨房家具缩放
+            "kitchen_furniture": 0.02, # 厨房家具
+
+            # 小垃圾物品缩放
             "small_trash": 0.02,       # 2% 略微缩小
+
+            "kitchen_small_items": 0.02, # 厨房小物品
+            # 大垃圾物品缩放
             "large_trash": 0.02,       # 2% 略微缩小
+
+            "kitchen_large_items": 0.02, # 厨房大物品
 
             # 装饰物品缩放
             "books": 0.02,             # 2% 书籍大小
@@ -93,7 +112,7 @@ class CleanupSystemConfig:
             "global_scale": 1.0,      # 全局缩放倍数
         }
         
-         # ==================== 家具位置配置 ====================
+        # ==================== 家具位置配置 ====================
         self.FURNITURE_POSITIONS = {
             # 格式: "家具名": [x, y, z, rotation_z_degrees]
             "desk": [150.0, 80.0, 0.0, 0.0],
@@ -102,6 +121,31 @@ class CleanupSystemConfig:
             "side_table": [350.0, -280.0, 0.0, 45.0],
             "console_table": [-450.0, -150.0, 0.0, 90.0],
             "bookshelf": [-380.0, -420.0, 0.0, 0.0],
+        }
+        # ==================== 厨房家具位置配置 ====================
+        self.KITCHEN_FURNITURE_POSITIONS = {
+            # 格式: "厨房家具名": [x, y, z, rotation_z_degrees]
+            "kitchen_table": [0.0, 0.0, 0.0, 0.0],
+            "chair": [1.0, 0.5, 0.0, 0.0],
+            "stool_wooden": [-1.0, -0.5, 0.0, 0.0],
+        }
+        # ==================== 厨房小物品位置配置 ====================
+        self.KITCHEN_SMALL_ITEMS_POSITIONS = {
+            # 格式: "厨房小物品名": [x, y, z]
+            "spoon": [0.2, 0.1, 0.8],
+            "fork": [0.3, 0.1, 0.8],
+            "cheerio": [0.4, 0.1, 0.8],
+            "paper_small": [0.5, 0.1, 0.8],
+            "crayon": [0.6, 0.1, 0.8],
+        }
+        # ==================== 厨房大物品位置配置 ====================
+        self.KITCHEN_LARGE_ITEMS_POSITIONS = {
+            # 格式: "厨房大物品名": [x, y, z]
+            "plate": [0.0, 1.0, 0.8],
+            "bowl": [0.0, 1.2, 0.8],
+            "cup": [0.0, 1.4, 0.8],
+            "pan": [0.0, 1.6, 0.8],
+            "bottle": [0.0, 1.8, 0.8],
         }
         
         # ==================== 书籍位置配置 ====================
@@ -295,7 +339,30 @@ class CleanupSystemConfig:
                 "book1": "Decor/Books/Book_01.usd",
                 "book2": "Decor/Books/Book_02.usd",
                 "book3": "Decor/Books/Book_11.usd",
+            },
+# 这里加资产
+            "kitchen_furniture": {
+                "kitchen_table": "Kitchen_set/assets/KitchenTable/KitchenTable.usd",
+                "chair": "Kitchen_set/assets/Chair/Chair.usd",
+                "stool_wooden": "Kitchen_set/assets/StoolWooden/StoolWooden.usd",
+            },
+            "kitchen_small_items": {
+                "spoon": "Kitchen_set/assets/Spoon/Spoon.usd",
+                "fork": "Kitchen_set/assets/Fork/Fork.usd",
+                "cheerio": "Kitchen_set/assets/Cheerio/Cheerio.usd",
+                "paper_small": "Kitchen_set/assets/PaperSmall/PaperSmall.usd",
+                "crayon": "Kitchen_set/assets/Crayon/Crayon.usd",
+            },
+            "kitchen_large_items": {
+                "plate": "Kitchen_set/assets/Plate/Plate.usd",
+                "bowl": "Kitchen_set/assets/Bowl/Bowl.usd",
+                "cup": "Kitchen_set/assets/Cup/Cup.usd",
+                "pan": "Kitchen_set/assets/Pan/Pan.usd",
+                "bottle": "Kitchen_set/assets/Bottle/Bottle.usd",
             }
+
+
+
         }
         
         # ==================== 照明配置 ====================
@@ -442,6 +509,8 @@ class CleanupSystemConfig:
             if key in self.SCALE_CONFIG:
                 self.SCALE_CONFIG[key] = value
                 print(f"🔧 {key} 缩放更新为: {value}")
+            else:
+                print(f"⚠️ 未知缩放配置: {key}")
     
     def add_furniture_position(self, name, x, y, z, rotation=0.0):
         """添加家具位置"""
@@ -502,138 +571,5 @@ class CleanupSystemConfig:
         print("🚀 增大导航容差，提高到达成功率")
         print("="*60)
 
-# ==================== 快速配置预设 ====================
 
-class QuickConfigs:
-    """快速配置预设（简化导航版）"""
-    
-    @staticmethod
-    def small_scene(username=None):
-        """小场景配置 - 减少物品数量，提高性能"""
-        config = CleanupSystemConfig(username)
-        
-        # 只保留核心家具
-        config.FURNITURE_POSITIONS = {
-            "desk": [300.0, 150.0, 0.0, 0.0],
-            "chair": [280.0, 80.0, 0.0, 0.0],
-            "coffee_table": [-300.0, 200.0, 0.0, 0.0],
-        }
-        
-        # 减少垃圾数量
-        config.SMALL_TRASH_POSITIONS = {
-            "orange1": [200.0, 100.0, 0.03],
-            "lemon1": [300.0, -100.0, 0.03],
-            "coaster": [-200.0, 160.0, 0.01],
-        }
-        
-        config.LARGE_TRASH_POSITIONS = {
-            "tin_can": [360.0, 240.0, 0.05],
-            "mason_jar": [-240.0, -200.0, 0.05],
-        }
-        
-        return config
-    
-    @staticmethod
-    def fast_movement(username=None):
-        """快速移动配置 - 更高的速度和更快的响应"""
-        config = CleanupSystemConfig(username)
-        config.update_robot_control(
-            max_linear_velocity=0.8,     # 更高的线速度
-            max_angular_velocity=2.5,    # 更高的角速度
-            velocity_smoothing=0.05      # 更少的平滑
-        )
-        config.update_navigation(
-            tolerance_small_trash=1.0,   # 更大的容差
-            tolerance_large_trash=1.1,
-            nav_timeout_small=25,        # 减少超时时间
-            nav_timeout_large=30
-        )
-        return config
-    
-    @staticmethod
-    def performance_optimized(username=None):
-        """性能优化配置 - 提高仿真性能"""
-        config = CleanupSystemConfig(username)
-        
-        # 降低物理频率
-        config.PHYSICS["physics_dt"] = 1.0/60.0  # 60Hz instead of 120Hz
-        
-        # 减少GPU资源使用
-        config.PHYSICS["gpu_max_rigid_contact_count"] = 512*1024
-        config.PHYSICS["gpu_heap_capacity"] = 32*1024*1024
-        
-        # 降低求解器精度换取性能
-        config.PHYSICS["solver_position_iterations"] = 4
-        config.PHYSICS["solver_velocity_iterations"] = 2
-        
-        return config
-    
-    @staticmethod
-    def debug_mode(username=None):
-        """调试模式配置 - 更多调试信息"""
-        config = CleanupSystemConfig(username)
-        
-        # 启用所有调试输出
-        config.DEBUG.update({
-            "enable_debug_output": True,
-            "show_robot_state": True,
-            "show_navigation_progress": True,
-            "show_grasp_details": True,
-            "progress_report_interval": 1.0,  # 更频繁的报告
-        })
-        
-        # 降低速度便于观察
-        config.ROBOT_CONTROL.update({
-            "max_linear_velocity": 0.4,
-            "max_angular_velocity": 1.5,
-        })
-        
-        return config
 
-# ==================== 使用示例 ====================
-
-def example_usage():
-    """配置文件使用示例"""
-    
-    # 1. 使用默认配置（自动检测用户名）
-    config = CleanupSystemConfig()
-    
-    # 2. 指定用户名
-    # config = CleanupSystemConfig(username="your_username")
-    
-    # 3. 手动设置路径（如果自动检测失败）
-    # config.set_user_paths(
-    #     isaac_assets_base="/path/to/your/isaac/assets",
-    #     isaac_sim_install="/path/to/your/isaac/sim"
-    # )
-    
-    # 4. 修改缩放比例
-    config.update_scale(furniture=0.02, books=0.02)
-    
-    # 5. 添加新的家具位置
-    config.add_furniture_position("sofa", 0.0, 600.0, 0.0, 180.0)
-    
-    # 6. 添加新的垃圾位置
-    config.add_trash_position("small", "pen", 100.0, 360.0, 0.02)
-    config.add_trash_position("large", "bottle", 300.0, 500.0, 0.05)
-    
-    # 7. 调整机器人参数（优化转弯）
-    config.update_robot_control(max_linear_velocity=0.6, max_angular_velocity=2.2)
-    
-    # 8. 调整导航参数
-    config.update_navigation(tolerance_small_trash=0.8, nav_timeout_small=35)
-    
-    # 9. 使用快速预设
-    # small_config = QuickConfigs.small_scene("your_username")
-    # fast_config = QuickConfigs.fast_movement("your_username")
-    # perf_config = QuickConfigs.performance_optimized("your_username")
-    # debug_config = QuickConfigs.debug_mode("your_username")
-    
-    # 10. 打印配置摘要
-    config.print_summary()
-    
-    return config
-
-if __name__ == "__main__":
-    # 测试配置
-    config = example_usage()
