@@ -110,12 +110,12 @@ class OSGTCleanupSystemConfig:
             # 格式: "可清扫物名": [x, y, z]
             # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
             # "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
-            # "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
-            # "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
-            # "sweepable_4": [-680.0, 120.0, 0.015],      # 清洁盲区
-            # "sweepable_5": [750.0, 80.0, 0.015],        # 设备下方
-            # "sweepable_6": [-420.0, 650.0, 0.03],       # 通道区域
-            # "sweepable_7": [320.0, -580.0, 0.03],       # 边缘区域
+            "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
+            "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
+            
+            "sweepable_5": [667.0, 80.0, 0.015],     
+            
+            "sweepable_7": [-424, -580.0, 0.03],     
         }
         
         # G类 - 可抓取物位置配置 (Graspable Items)
@@ -248,7 +248,7 @@ class OSGTCleanupSystemConfig:
                 "obstacle_6": "Furniture/Bookshelves/Fenton.usd",     # 大型设备
             },
             
-            },
+           
             # S类 - 可清扫物配置 (小颗粒吸附收集)
             "sweepable_items": {
                 "sweepable_1": "Decor/Tchotchkes/Orange_01.usd",      # 有机碎渣
