@@ -151,56 +151,197 @@ class OSGTCleanupSystemConfig:
         }
         
         # ==================== OSGT四类物体位置配置 ====================
-        # Lobby环境边界: [1348,153,0.08]  [-2197,153,0.08] 
-        #               [1348,-1985,0.08] [-370,-1960,0.08] [-370,-1339,0.08]  [-2128,-1339,0.08]
-        # 随机分布策略：在边界范围内合理分散各类物体
-        
-        # O类 - 障碍物位置配置 (Obstacles) - 在Lobby范围内随机分布
-        self.OBSTACLES_POSITIONS = {
-            # 格式: "障碍物名": [x, y, z, rotation_z_degrees]
-            # 在Lobby环境内随机分布
-            "chair_b1": [450.0, 80.0, 0.0, 0.0],         # 办公椅1
-            
-            "dining_table": [200.0, -600.0, 0.0, 0.0],   # 会议桌
-            "folding_table": [-1200.0, 120.0, 0.0, 90.0], # 折叠桌
-            "kitchen_table": [800.0, -1200.0, 0.0, 0.0], # 工作台
-            "stool_wooden": [-500.0, -800.0, 0.0, 0.0],  # 木质凳子
-            "book_stack_01": [1000.0, -400.0, 0.0, 0.0], # 书堆1
-            "encyclopedia": [-1500.0, -200.0, 0.0, 0.0], # 百科全书
+        # 根据场景类型配置不同的OSGT四类物体位置
+        scenario_positions_mapping = {
+            "lobby": {
+                # Lobby环境边界: [1348,153,0.08]  [-2197,153,0.08] 
+                #               [1348,-1985,0.08] [-370,-1960,0.08] [-370,-1339,0.08]  [-2128,-1339,0.08]
+                "obstacles": {
+                    "chair_b1": [450.0, 80.0, 0.0, 0.0],
+                    "dining_table": [200.0, -600.0, 0.0, 0.0],
+                    "folding_table": [-1200.0, 120.0, 0.0, 90.0],
+                    "kitchen_table": [800.0, -1200.0, 0.0, 0.0],
+                    "stool_wooden": [-500.0, -800.0, 0.0, 0.0],
+                    "book_stack_01": [1000.0, -400.0, 0.0, 0.0],
+                    "encyclopedia": [-1500.0, -200.0, 0.0, 0.0]
+                },
+                "sweepable": {
+                    "bubble_marble_02": [300.0, 100.0, 0.05],
+                    "caster_bearing": [-600.0, -500.0, 0.05],
+                    "cheerio_geom": [700.0, -800.0, 0.05],
+                    "d20_01": [-1000.0, 50.0, 0.08],
+                    "metalballs": [150.0, -1400.0, 0.03],
+                    "plasticballs": [-1800.0, -600.0, 0.03]
+                },
+                "graspable": {
+                    "mechanical_pencil": [-400.0, 120.0, 0.1],
+                    "cup": [600.0, -300.0, 0.05],
+                    "bottle": [-1100.0, -1000.0, 0.1],
+                    "fork": [900.0, 80.0, 0.1],
+                    "ball": [-200.0, -1200.0, 0.05],
+                    "salt_shaker": [1200.0, -700.0, 0.08]
+                },
+                "task_areas": {
+                    "trash_can": [400.0, -1500.0, 0.0, 0.0],
+                    "recycling_bin": [-800.0, 100.0, 0.0, 45.0],
+                    "storage_box": [-1600.0, -1200.0, 0.0, 0.0]
+                }
+            },
+            "office": {
+                # 办公室环境 - 更紧凑的布局
+                "obstacles": {
+                    "chair_b1": [2.0, 1.0, 0.0, 0.0],
+                    "dining_table": [1.0, -3.0, 0.0, 0.0],
+                    "folding_table": [-6.0, 0.5, 0.0, 90.0],
+                    "kitchen_table": [4.0, -6.0, 0.0, 0.0],
+                    "stool_wooden": [-2.5, -4.0, 0.0, 0.0],
+                    "book_stack_01": [5.0, -2.0, 0.0, 0.0],
+                    "encyclopedia": [-7.5, -1.0, 0.0, 0.0]
+                },
+                "sweepable": {
+                    "bubble_marble_02": [1.5, 0.5, 0.05],
+                    "caster_bearing": [-3.0, -2.5, 0.05],
+                    "cheerio_geom": [3.5, -4.0, 0.05],
+                    "d20_01": [-5.0, 0.25, 0.08],
+                    "metalballs": [0.75, -7.0, 0.03],
+                    "plasticballs": [-9.0, -3.0, 0.03]
+                },
+                "graspable": {
+                    "mechanical_pencil": [-2.0, 0.6, 0.1],
+                    "cup": [3.0, -1.5, 0.05],
+                    "bottle": [-5.5, -5.0, 0.1],
+                    "fork": [4.5, 0.4, 0.1],
+                    "ball": [-1.0, -6.0, 0.05],
+                    "salt_shaker": [6.0, -3.5, 0.08]
+                },
+                "task_areas": {
+                    "trash_can": [2.0, -7.5, 0.0, 0.0],
+                    "recycling_bin": [-4.0, 0.5, 0.0, 45.0],
+                    "storage_box": [-8.0, -6.0, 0.0, 0.0]
+                }
+            },
+            "hospital": {
+                # 医院环境 - 清洁有序的布局
+                "obstacles": {
+                    "chair_b1": [3.0, 2.0, 0.0, 0.0],
+                    "dining_table": [1.5, -4.0, 0.0, 0.0],
+                    "folding_table": [-8.0, 1.0, 0.0, 0.0],
+                    "kitchen_table": [6.0, -8.0, 0.0, 0.0],
+                    "stool_wooden": [-3.0, -5.0, 0.0, 0.0],
+                    "book_stack_01": [7.0, -3.0, 0.0, 0.0],
+                    "encyclopedia": [-10.0, -1.5, 0.0, 0.0]
+                },
+                "sweepable": {
+                    "bubble_marble_02": [2.0, 1.0, 0.05],
+                    "caster_bearing": [-4.0, -3.0, 0.05],
+                    "cheerio_geom": [4.0, -5.0, 0.05],
+                    "d20_01": [-6.0, 0.5, 0.08],
+                    "metalballs": [1.0, -9.0, 0.03],
+                    "plasticballs": [-12.0, -4.0, 0.03]
+                },
+                "graspable": {
+                    "mechanical_pencil": [-2.5, 1.5, 0.1],
+                    "cup": [4.0, -2.0, 0.05],
+                    "bottle": [-7.0, -6.0, 0.1],
+                    "fork": [5.5, 1.0, 0.1],
+                    "ball": [-1.5, -7.0, 0.05],
+                    "salt_shaker": [8.0, -4.0, 0.08]
+                },
+                "task_areas": {
+                    "trash_can": [3.0, -10.0, 0.0, 0.0],
+                    "recycling_bin": [-5.0, 1.0, 0.0, 0.0],
+                    "storage_box": [-11.0, -7.0, 0.0, 0.0]
+                }
+            },
+            "kitchen": {
+                # 厨房环境 - 功能区域布局
+                "obstacles": {
+                    "chair_b1": [1.0, 0.5, 0.0, 0.0],
+                    "dining_table": [0.5, -1.5, 0.0, 0.0],
+                    "folding_table": [-3.0, 0.3, 0.0, 90.0],
+                    "kitchen_table": [2.0, -3.0, 0.0, 0.0],
+                    "stool_wooden": [-1.25, -2.0, 0.0, 0.0],
+                    "book_stack_01": [2.5, -1.0, 0.0, 0.0],
+                    "encyclopedia": [-3.75, -0.5, 0.0, 0.0]
+                },
+                "sweepable": {
+                    "bubble_marble_02": [0.75, 0.25, 0.05],
+                    "caster_bearing": [-1.5, -1.25, 0.05],
+                    "cheerio_geom": [1.75, -2.0, 0.05],
+                    "d20_01": [-2.5, 0.125, 0.08],
+                    "metalballs": [0.375, -3.5, 0.03],
+                    "plasticballs": [-4.5, -1.5, 0.03]
+                },
+                "graspable": {
+                    "mechanical_pencil": [-1.0, 0.3, 0.1],
+                    "cup": [1.5, -0.75, 0.05],
+                    "bottle": [-2.75, -2.5, 0.1],
+                    "fork": [2.25, 0.2, 0.1],
+                    "ball": [-0.5, -3.0, 0.05],
+                    "salt_shaker": [3.0, -1.75, 0.08]
+                },
+                "task_areas": {
+                    "trash_can": [1.0, -3.75, 0.0, 0.0],
+                    "recycling_bin": [-2.0, 0.25, 0.0, 45.0],
+                    "storage_box": [-4.0, -3.0, 0.0, 0.0]
+                }
+            },
+            "restaurant": {
+                # 餐厅环境 - 用餐区域布局
+                "obstacles": {
+                    "chair_b1": [2.5, 1.5, 0.0, 0.0],
+                    "dining_table": [1.0, -3.5, 0.0, 0.0],
+                    "folding_table": [-7.0, 0.8, 0.0, 0.0],
+                    "kitchen_table": [5.0, -7.0, 0.0, 0.0],
+                    "stool_wooden": [-2.0, -4.5, 0.0, 0.0],
+                    "book_stack_01": [6.0, -2.5, 0.0, 0.0],
+                    "encyclopedia": [-9.0, -1.0, 0.0, 0.0]
+                },
+                "sweepable": {
+                    "bubble_marble_02": [1.8, 0.8, 0.05],
+                    "caster_bearing": [-3.5, -2.8, 0.05],
+                    "cheerio_geom": [3.8, -4.5, 0.05],
+                    "d20_01": [-5.5, 0.4, 0.08],
+                    "metalballs": [0.9, -8.0, 0.03],
+                    "plasticballs": [-10.5, -3.5, 0.03]
+                },
+                "graspable": {
+                    "mechanical_pencil": [-1.8, 1.2, 0.1],
+                    "cup": [3.5, -1.8, 0.05],
+                    "bottle": [-6.0, -5.5, 0.1],
+                    "fork": [4.8, 0.6, 0.1],
+                    "ball": [-0.8, -6.5, 0.05],
+                    "salt_shaker": [7.0, -3.8, 0.08]
+                },
+                "task_areas": {
+                    "trash_can": [2.5, -8.5, 0.0, 0.0],
+                    "recycling_bin": [-4.5, 0.8, 0.0, 45.0],
+                    "storage_box": [-10.0, -6.5, 0.0, 0.0]
+                }
+            },
+            # 其他场景类型使用lobby的配置作为默认值
+            "residential": "lobby",
+            "school": "office", 
+            "factory": "office"
         }
         
-        # S类 - 可清扫物位置配置 (Sweepable Items) - 6个物体随机分布
-        self.SWEEPABLE_POSITIONS = {
-            # 格式: "可清扫物名": [x, y, z]
-            # 在Lobby环境内随机分布6个小颗粒物质，便于机器人清扫测试
-            "bubble_marble_02": [300.0, 100.0, 0.05],    # 气泡弹珠2
-            "caster_bearing": [-600.0, -500.0, 0.05],    # 脚轮轴承
-            "cheerio_geom": [700.0, -800.0, 0.05],      # 小圆环
-            "d20_01": [-1000.0, 50.0, 0.08],             # 20面骰子
-            "metalballs": [150.0, -1400.0, 0.03],        # 金属球
-            "plasticballs": [-1800.0, -600.0, 0.03],     # 塑料球
-        }
+        # 获取当前场景类型的位置配置
+        selected_positions = scenario_positions_mapping.get(self.SCENARIO_TYPE, "lobby")
+        # 如果是字符串引用，则使用引用的配置
+        if isinstance(selected_positions, str):
+            selected_positions = scenario_positions_mapping[selected_positions]
         
-        # G类 - 可抓取物位置配置 (Graspable Items) - 6个物体随机分布
-        self.GRASPABLE_POSITIONS = {
-            # 格式: "可抓取物名": [x, y, z]
-            # 在Lobby环境内随机分布6个可抓取物体，从马克笔到小水瓶大小
-            "mechanical_pencil": [-400.0, 120.0, 0.1],   # 机械铅笔
-            "cup": [600.0, -300.0, 0.05],                # 杯子
-            "bottle": [-1100.0, -1000.0, 0.1],           # 瓶子
-            "fork": [900.0, 80.0, 0.1],                  # 叉子
-            "ball": [-200.0, -1200.0, 0.05],             # 球
-            "salt_shaker": [1200.0, -700.0, 0.08],       # 盐瓶
-        }
+        # O类 - 障碍物位置配置 (Obstacles)
+        self.OBSTACLES_POSITIONS = selected_positions["obstacles"]
         
-        # T类 - 任务区位置配置 (Task Areas) - 随机分布多个任务区
-        self.TASK_AREAS_POSITIONS = {
-            # 格式: "任务区名": [x, y, z, rotation_z_degrees]
-            # 在Lobby环境内随机分布，包括回收区、分拣区、存放区等
-            "trash_can": [400.0, -1500.0, 0.0, 0.0],        # 垃圾桶(S类回收区)
-            "recycling_bin": [-800.0, 100.0, 0.0, 45.0],    # 回收箱(G类分拣区)
-            "storage_box": [-1600.0, -1200.0, 0.0, 0.0],    # 储物箱(通用存放区)
-        }
+        # S类 - 可清扫物位置配置 (Sweepable Items)
+        self.SWEEPABLE_POSITIONS = selected_positions["sweepable"]
+        
+        # G类 - 可抓取物位置配置 (Graspable Items)
+        self.GRASPABLE_POSITIONS = selected_positions["graspable"]
+        
+        # T类 - 任务区位置配置 (Task Areas)
+        self.TASK_AREAS_POSITIONS = selected_positions["task_areas"]
         
         # ==================== 机器人控制参数 ====================
         self.ROBOT_CONTROL = {
