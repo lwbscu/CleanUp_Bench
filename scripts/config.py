@@ -65,7 +65,7 @@ class OSGTCleanupSystemConfig:
                 "rotation_z": 0.0
             },
             "kitchen": {
-                "usd_path": "My_asset/background/Kitchen_set_instanced.usd",
+                "usd_path": "My_asset/background/Kitchen.usd",
                 "scale": 0.02,
                 "position": [0.0, 0.0, 0.0],
                 "rotation_z": 0.0
@@ -255,35 +255,33 @@ class OSGTCleanupSystemConfig:
             },
             "kitchen": {
                 # 厨房环境 - 功能区域布局
+                # 环境边界:
+                # [693,94,0],[693,-482,0]
+                # [-199,-482,0],[-199,-33,0]
                 "obstacles": {
-                    "chair_b1": [1.0, 0.5, 0.0, 0.0],
-                    "dining_table": [0.5, -1.5, 0.0, 0.0],
-                    "folding_table": [-3.0, 0.3, 0.0, 90.0],
-                    "kitchen_table": [2.0, -3.0, 0.0, 0.0],
-                    "stool_wooden": [-1.25, -2.0, 0.0, 0.0],
-                    "book_stack_01": [2.5, -1.0, 0.0, 0.0],
-                    "encyclopedia": [-3.75, -0.5, 0.0, 0.0]
+                    # "chair_b1": [1.0, 0.5, 0.0, 0.0],
+                    # "dining_table": [0.5, -1.5, 0.0, 0.0],
+                    # "folding_table": [-3.0, 0.3, 0.0, 90.0],
+                    # "stool_wooden": [-1.25, -2.0, 0.0, 0.0],
+                    # "book_stack_01": [2.5, -1.0, 0.0, 0.0],
+                    # "encyclopedia": [-3.75, -0.5, 0.0, 0.0]
                 },
                 "sweepable": {
-                    "bubble_marble_02": [0.75, 0.25, 0.05],
-                    "caster_bearing": [-1.5, -1.25, 0.05],
-                    "cheerio_geom": [1.75, -2.0, 0.05],
-                    "d20_01": [-2.5, 0.125, 0.08],
-                    "metalballs": [0.375, -3.5, 0.03],
-                    "plasticballs": [-4.5, -1.5, 0.03]
+                    # S类 - 可清扫物位置配置 (4个物体在厨房边界内随机分布)
+                    "bubble_marble_02": [120.0, 30.0, 0.05],      # 气泡弹珠2
+                    "caster_bearing": [450.0, -200.0, 0.05],      # 脚轮轴承
+                    "cheerio_geom": [580.0, -350.0, 0.05],        # 小圆环
+                    "d20_01": [-80.0, -120.0, 0.08],              # 20面骰子
                 },
                 "graspable": {
-                    "mechanical_pencil": [-1.0, 0.3, 0.1],
-                    "cup": [1.5, -0.75, 0.05],
-                    "bottle": [-2.75, -2.5, 0.1],
-                    "fork": [2.25, 0.2, 0.1],
-                    "ball": [-0.5, -3.0, 0.05],
-                    "salt_shaker": [3.0, -1.75, 0.08]
+                    # G类 - 可抓取物位置配置 (4个物体在厨房边界内随机分布)
+                    "mechanical_pencil": [200.0, 60.0, 0.1],      # 机械铅笔
+                    "cup": [500.0, -150.0, 0.05],                 # 杯子
+                    "bottle": [350.0, -400.0, 0.1],               # 瓶子
+                    "fork": [-120.0, -250.0, 0.1],                # 叉子
                 },
                 "task_areas": {
-                    "trash_can": [1.0, -3.75, 0.0, 0.0],
-                    "recycling_bin": [-2.0, 0.25, 0.0, 45.0],
-                    "storage_box": [-4.0, -3.0, 0.0, 0.0]
+                    "trash_can": [600.0, -450.0, 0.0, 0.0],       # 垃圾桶(靠近边界)
                 }
             },
             "restaurant": {
