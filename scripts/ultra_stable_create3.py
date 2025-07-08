@@ -1456,8 +1456,18 @@ def main():
         traceback.print_exc()
     
     finally:
-        system.cleanup()
-        simulation_app.close()
+        print("\n💡 任务完成！窗口将保持打开状态")
+        print("💡 要关闭程序，请按 Alt+F4 或关闭窗口")
+        try:
+            # 保持仿真运行，等待用户手动关闭
+            while simulation_app.is_running():
+                system.world.step(render=True)
+                time.sleep(0.016)
+        except:
+            pass
+        finally:
+            system.cleanup()
+            simulation_app.close()
 
 if __name__ == "__main__":
     main()
