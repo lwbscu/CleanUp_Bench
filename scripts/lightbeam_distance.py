@@ -1,143 +1,202 @@
 #!/usr/bin/env python3
 """
-OSGT LightBeam距离检测和避障系统 - 修复版
-附着在Create-3机械臂上的光束传感器，用于检测O类障碍物并执行三级避障
+OSGT四类物体LightBeam光束传感器避障系统
+8个方向的传感器配置，支持三级距离阈值检测
+避障对象：O类障碍物和环境场景，不包括S/G/T三类物体
+参考官方教程create_robot_obstacle_test.py的实现方式
 """
 
 import numpy as np
 import time
-import math
-from typing import List, Tuple, Dict, Optional, Any
-from collections import deque
-from enum import Enum
-
-# Isaac Sim API
+from typing import Dict, List, Tuple, Optional
+from pxr import Gf, Sdf, UsdPhysics
 import omni
 import omni.timeline
-from pxr import Gf, UsdPhysics, Sdf
-from isaacsim.core.utils.extensions import enable_extension
 import omni.graph.core as og
+from isaacsim.core.utils.extensions import enable_extension
 
-
-class OSGTAvoidanceLevel(Enum):
-    """OSGT避障级别枚举"""
-    SAFE = "safe"                    # 安全距离
-    CAUTION = "caution"             # 较近距离，需要注意
-    DANGER = "danger"               # 即将碰撞，紧急避障
-
-
-class OSGTLightBeamSensorSystem:
-    """OSGT LightBeam光束传感器系统 - 修复版"""
+class LightBeamSensorManager:
+    """LightBeam传感器管理器 - 8方向避障系统（官方教程优化版）"""
     
-    def __init__(self, config: Dict[str, Any], world, robot_prim_path: str):
+    def __init__(self, config, robot_prim_path="/World/create3_robot"):
         self.config = config
-        self.world = world
         self.robot_prim_path = robot_prim_path
         
-        # 从配置读取参数
-        lightbeam_config = config.LIGHTBEAM_CONFIG
-        self.sensor_configs = lightbeam_config["sensors"]
-        
-        # 获取当前物体类型的距离阈值
-        self.current_object_type = "environment"  # 默认环境类型
-        self.distance_thresholds = lightbeam_config["distance_thresholds"]["environment"]
-        self.avoidance_params = lightbeam_config["avoidance_parameters"]
-        self.visualization_enabled = lightbeam_config["enable_visualization"]
-        
-        # LightBeam传感器接口
-        self.lightbeam_interface = None
-        self.timeline = None
-        self.sensor_paths = []
-        self.sensor_data = {}
-        
-        # 避障状态
-        self.current_avoidance_level = OSGTAvoidanceLevel.SAFE
-        self.obstacle_directions = []
-        self.min_distance = float('inf')
-        self.raw_distances = []  # 新增：存储原始距离数据
-        self.avoidance_velocity_modifier = (1.0, 1.0)  # (linear_factor, angular_factor)
-        
-        # 避障历史和平滑
-        self.avoidance_history = deque(maxlen=10)
-        self.last_avoidance_command = (0.0, 0.0)
-        
-        # 统计数据
-        self.detection_stats = {
-            'total_detections': 0,
-            'safe_detections': 0,
-            'caution_detections': 0,
-            'danger_detections': 0,
-            'avoidance_activations': 0,
-            'min_distance_recorded': float('inf'),
-            'data_read_failures': 0,
-            'successful_reads': 0
+        # 8个传感器配置（重新设计，避免检测到机器人自身）
+        self.sensors_config = {
+            "sensors": [
+                # 底部高度传感器 - 4个方向（增加距离，避免检测到机器人）
+                {
+                    "name": "front_bottom",
+                    "relative_position": [1.2, 0, -0.2],       # 前移1.2m，避免检测到机器人
+                    "min_range": 1.0,  # 增加最小距离
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [1, 0, 0]
+                },
+                {
+                    "name": "back_bottom", 
+                    "relative_position": [-1.2, 0, -0.2],      # 后移1.2m
+                    "min_range": 1.0,
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [-1, 0, 0]
+                },
+                {
+                    "name": "left_bottom",
+                    "relative_position": [0, 1.2, -0.2],       # 左移1.2m
+                    "min_range": 1.0,
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [0, 1, 0]
+                },
+                {
+                    "name": "right_bottom",
+                    "relative_position": [0, -1.2, -0.2],      # 右移1.2m
+                    "min_range": 1.0,
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [0, -1, 0]
+                },
+                # 顶部高度传感器 - 4个方向（增加距离和高度）
+                {
+                    "name": "front_top",
+                    "relative_position": [1.0, 0, 0.5],        # 前移1.0m，高度0.5
+                    "min_range": 0.8,
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [1, 0, 0]
+                },
+                {
+                    "name": "back_top",
+                    "relative_position": [-1.0, 0, 0.5],       # 后移1.0m
+                    "min_range": 0.8,
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [-1, 0, 0]
+                },
+                {
+                    "name": "left_top",
+                    "relative_position": [0, 1.0, 0.5],        # 左移1.0m
+                    "min_range": 0.8,
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [0, 1, 0]
+                },
+                {
+                    "name": "right_top",
+                    "relative_position": [0, -1.0, 0.5],       # 右移1.0m
+                    "min_range": 0.8,
+                    "max_range": 8.0,
+                    "num_rays": 3,
+                    "curtain_length": 0.3,
+                    "forward_axis": [0, -1, 0]
+                }
+            ]
         }
         
-        print(f"🔦 OSGT LightBeam系统初始化: {len(self.sensor_configs)}个传感器")
-    
-    def set_object_type_context(self, object_type: str):
-        """设置当前处理的物体类型，调整距离阈值"""
-        self.current_object_type = object_type
+        # 三级距离阈值配置（调整为更合理的值）
+        self.distance_thresholds = {
+            "safe_distance": 4.0,        # 安全距离 - 绿色状态
+            "warning_distance": 2.5,     # 警告距离 - 黄色状态  
+            "critical_distance": 1.5     # 危险距离 - 红色状态
+        }
         
-        lightbeam_config = self.config.LIGHTBEAM_CONFIG
-        if object_type in ["sweepable", "graspable", "task_areas"]:
-            # S/G/T类物体使用精确距离阈值
-            self.distance_thresholds = lightbeam_config["distance_thresholds"]["sgt_objects"]
-            if self.config.DEBUG["show_lightbeam_status"]:
-                print(f"🎯 LightBeam切换到S/G/T物体模式: {object_type}")
-        else:
-            # 环境/O类障碍物使用环境距离阈值
-            self.distance_thresholds = lightbeam_config["distance_thresholds"]["environment"]
-            if self.config.DEBUG["show_lightbeam_status"]:
-                print(f"🏠 LightBeam切换到环境/障碍物模式: {object_type}")
+        # 传感器状态
+        self.sensors = {}
+        self.sensor_interfaces = {}
+        self.last_distances = {}
+        self.obstacle_status = "safe"
+        
+        # 使用官方教程的接口方式
+        self.lightbeam_interface = None
+        self.timeline = None
+        
+        # 避障状态
+        self.avoidance_active = False
+        self.last_avoidance_time = 0
+        self.avoidance_cooldown = 0.5
+        
+        # 初始化标志
+        self.initialized = False
+        self.visualization_setup = False
+        
+        # 统计信息
+        self.stats = {
+            "obstacle_detections": 0,
+            "avoidance_actions": 0,
+            "safe_readings": 0,
+            "warning_readings": 0,
+            "critical_readings": 0
+        }
     
-    def initialize_sensors(self) -> bool:
-        """初始化所有LightBeam传感器"""
+    def initialize_sensors(self, world):
+        """初始化所有LightBeam传感器（官方教程优化版）"""
         try:
-            print("📡 初始化OSGT LightBeam传感器...")
+            print("📡 初始化8方向LightBeam传感器系统（官方教程方式）...")
             
             # 启用PhysX传感器扩展
             enable_extension("isaacsim.sensors.physx")
+            world.render()
+            time.sleep(0.2)
             
-            # 获取timeline接口
-            self.timeline = omni.timeline.get_timeline_interface()
-            
-            # 获取LightBeam接口（使用正确的方法）
-            from isaacsim.sensors.physx import _range_sensor
-            self.lightbeam_interface = _range_sensor.acquire_lightbeam_sensor_interface()
-            
-            if self.lightbeam_interface is None:
-                print("❌ 无法获取LightBeam传感器接口")
-                return False
+            # 获取stage
+            stage = omni.usd.get_context().get_stage()
             
             # 确保物理场景存在
-            stage = self.world.stage
             physics_scene_path = "/World/physicsScene"
-            if not stage.GetPrimAtPath(physics_scene_path).IsValid():
-                UsdPhysics.Scene.Define(stage, Sdf.Path(physics_scene_path))
+            physics_scene_prim = stage.GetPrimAtPath(physics_scene_path)
             
-            # 为每个配置创建传感器
-            for i, sensor_config in enumerate(self.sensor_configs):
-                sensor_path = f"/World/LightBeam_Sensor_{i}"  # 修正路径
-                success = self._create_lightbeam_sensor(sensor_path, sensor_config)
-                
+            if not physics_scene_prim or not physics_scene_prim.IsValid():
+                print("🔧 创建物理场景...")
+                physics_scene = UsdPhysics.Scene.Define(stage, Sdf.Path(physics_scene_path))
+                physics_scene.CreateGravityDirectionAttr().Set(Gf.Vec3f(0.0, 0.0, -1.0))
+                physics_scene.CreateGravityMagnitudeAttr().Set(9.81)
+                print("✅ 物理场景已创建")
+            
+            # 强制更新物理场景
+            world.render()
+            for _ in range(15):
+                world.step(render=True)
+                time.sleep(0.016)
+            
+            # 使用官方教程的接口获取方式
+            from isaacsim.sensors.physx import _range_sensor
+            self.lightbeam_interface = _range_sensor.acquire_lightbeam_sensor_interface()
+            self.timeline = omni.timeline.get_timeline_interface()
+            
+            print("✅ LightBeam接口获取成功")
+            
+            # 创建所有8个传感器
+            success_count = 0
+            for sensor_config in self.sensors_config["sensors"]:
+                success = self._create_single_sensor(sensor_config, stage)
                 if success:
-                    self.sensor_paths.append(sensor_path)
-                    self.sensor_data[sensor_path] = {
-                        'config': sensor_config,
-                        'last_detection': None,
-                        'status': 'active'
-                    }
-                    print(f"   ✅ 传感器 {i}: {sensor_config['name']} -> {sensor_path}")
+                    success_count += 1
                 else:
-                    print(f"   ❌ 传感器 {i}: {sensor_config['name']} 创建失败")
-                    return False
+                    print(f"❌ 传感器 {sensor_config['name']} 创建失败")
             
-            # 设置可视化
-            if self.visualization_enabled:
-                self._setup_visualization()
+            if success_count < 8:
+                print(f"⚠️ 只有 {success_count}/8 个传感器创建成功")
+                return False
             
-            print(f"✅ OSGT LightBeam系统初始化完成: {len(self.sensor_paths)}个传感器")
+            # 再次稳定物理场景
+            for _ in range(25):
+                world.step(render=True)
+                time.sleep(0.016)
+            
+            self.initialized = True
+            print(f"✅ LightBeam传感器系统初始化完成，共 {len(self.sensors)} 个传感器")
+            print(f"🎯 三级阈值: 安全{self.distance_thresholds['safe_distance']}m, "
+                  f"警告{self.distance_thresholds['warning_distance']}m, "
+                  f"危险{self.distance_thresholds['critical_distance']}m")
             return True
             
         except Exception as e:
@@ -146,515 +205,612 @@ class OSGTLightBeamSensorSystem:
             traceback.print_exc()
             return False
     
-    def _create_lightbeam_sensor(self, sensor_path: str, sensor_config: Dict) -> bool:
-        """创建单个LightBeam传感器"""
+    def _create_single_sensor(self, sensor_config, stage):
+        """创建单个传感器（官方教程方式）"""
         try:
-            # 传感器相对位置（从配置读取）
-            relative_pos = sensor_config.get("relative_position", [0.0, 0.0, 0.5])
-            relative_rot = sensor_config.get("relative_rotation", [0.0, 0.0, 0.0])
+            sensor_name = sensor_config["name"]
+            sensor_path = f"/World/LightBeam_{sensor_name}"
             
-            # 初始位置（相对于世界原点）
-            sensor_position = np.array(relative_pos)
+            # 计算传感器在世界坐标中的初始位置（相对机器人中心的偏移）
+            robot_pos = np.array([0.0, 0.0, 0.0])  # 机器人初始位置
+            sensor_offset = np.array(sensor_config["relative_position"])
+            sensor_position = robot_pos + sensor_offset
             
-            # 创建传感器方向四元数
-            orientation_quat = self._euler_to_quaternion(relative_rot)
-            
-            # 传感器参数
-            min_range = sensor_config.get("min_range", 0.1)
-            max_range = sensor_config.get("max_range", 5.0)
-            num_rays = sensor_config.get("num_rays", 5)
-            curtain_length = sensor_config.get("curtain_length", 0.5)
-            forward_axis = sensor_config.get("forward_axis", [1, 0, 0])
-            
-            # 创建LightBeam传感器
+            # 使用官方教程的创建方式
             result, sensor = omni.kit.commands.execute(
                 "IsaacSensorCreateLightBeamSensor",
                 path=sensor_path,
                 parent=None,
-                min_range=min_range,
-                max_range=max_range,
+                min_range=sensor_config["min_range"],
+                max_range=sensor_config["max_range"],
                 translation=Gf.Vec3d(sensor_position[0], sensor_position[1], sensor_position[2]),
-                orientation=Gf.Quatd(orientation_quat[3], orientation_quat[0], orientation_quat[1], orientation_quat[2]),
-                forward_axis=Gf.Vec3d(forward_axis[0], forward_axis[1], forward_axis[2]),
-                num_rays=num_rays,
-                curtain_length=curtain_length,
+                orientation=Gf.Quatd(1, 0, 0, 0),
+                forward_axis=Gf.Vec3d(*sensor_config["forward_axis"]),
+                num_rays=sensor_config["num_rays"],
+                curtain_length=sensor_config["curtain_length"],
             )
             
-            return result
-            
+            if result:
+                self.sensors[sensor_name] = {
+                    "path": sensor_path,
+                    "config": sensor_config,
+                    "prim": stage.GetPrimAtPath(sensor_path)
+                }
+                self.last_distances[sensor_name] = None
+                
+                if self.config.DEBUG["enable_debug_output"]:
+                    print(f"   ✅ 传感器 {sensor_name} 创建成功: {sensor_path}")
+                return True
+            else:
+                print(f"   ❌ 传感器 {sensor_name} 创建失败")
+                return False
+                
         except Exception as e:
-            print(f"创建LightBeam传感器失败: {e}")
+            print(f"创建传感器 {sensor_config['name']} 失败: {e}")
             return False
     
-    def _setup_visualization(self) -> bool:
-        """设置光束可视化"""
+    def setup_visualization(self):
+        """设置传感器可视化"""
+        if self.visualization_setup:
+            return True
+            
         try:
-            print("🎨 设置LightBeam可视化...")
+            print("🎨 设置LightBeam传感器可视化...")
             
-            # 为每个传感器创建可视化
-            for i, sensor_path in enumerate(self.sensor_paths):
-                graph_path = f"/ActionGraph_LightBeam_{i}"
-                
-                try:
-                    (action_graph, new_nodes, _, _) = og.Controller.edit(
-                        {"graph_path": graph_path, "evaluator_name": "execution"},
-                        {
-                            og.Controller.Keys.CREATE_NODES: [
-                                ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                                ("IsaacReadLightBeam", "isaacsim.sensors.physx.IsaacReadLightBeam"),
-                                ("DebugDrawRayCast", "isaacsim.util.debug_draw.DebugDrawRayCast"),
-                            ],
-                            og.Controller.Keys.SET_VALUES: [
-                                ("IsaacReadLightBeam.inputs:lightbeamPrim", sensor_path),
-                            ],
-                            og.Controller.Keys.CONNECT: [
-                                ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam.inputs:execIn"),
-                                ("IsaacReadLightBeam.outputs:execOut", "DebugDrawRayCast.inputs:exec"),
-                                ("IsaacReadLightBeam.outputs:beamOrigins", "DebugDrawRayCast.inputs:beamOrigins"),
-                                ("IsaacReadLightBeam.outputs:beamEndPoints", "DebugDrawRayCast.inputs:beamEndPoints"),
-                                ("IsaacReadLightBeam.outputs:numRays", "DebugDrawRayCast.inputs:numRays"),
-                            ],
-                        },
-                    )
-                    print(f"   ✅ 传感器 {i} 可视化设置完成")
-                except Exception as e:
-                    print(f"   ⚠️ 传感器 {i} 可视化设置失败: {e}")
+            # 为每个传感器创建可视化节点
+            viz_count = 0
+            for sensor_name, sensor_info in self.sensors.items():
+                if self._create_sensor_visualization(sensor_name, sensor_info):
+                    viz_count += 1
             
-            print("✅ LightBeam可视化设置完成")
+            self.visualization_setup = True
+            print(f"✅ LightBeam传感器可视化设置完成，{viz_count}/{len(self.sensors)} 个传感器可视化")
             return True
             
         except Exception as e:
-            print(f"⚠️ LightBeam可视化设置失败: {e}")
+            print(f"⚠️ 传感器可视化设置失败: {e}")
             return False
     
-    def update_sensor_positions(self, robot_position: np.ndarray, robot_yaw: float):
-        """更新传感器位置（跟随机器人）"""
+    def _create_sensor_visualization(self, sensor_name, sensor_info):
+        """为单个传感器创建可视化"""
         try:
-            stage = self.world.stage
+            graph_path = f"/ActionGraph_{sensor_name}"
+            sensor_path = sensor_info["path"]
             
-            for i, sensor_path in enumerate(self.sensor_paths):
-                sensor_config = self.sensor_data[sensor_path]['config']
-                
-                # 计算传感器在机器人坐标系中的相对位置
-                relative_pos = np.array(sensor_config.get("relative_position", [0.0, 0.0, 0.5]))
-                relative_rot = sensor_config.get("relative_rotation", [0.0, 0.0, 0.0])
-                
-                # 考虑机器人朝向的位置变换
-                cos_yaw = np.cos(robot_yaw)
-                sin_yaw = np.sin(robot_yaw)
-                
-                # 旋转相对位置
-                rotated_pos = np.array([
-                    relative_pos[0] * cos_yaw - relative_pos[1] * sin_yaw,
-                    relative_pos[0] * sin_yaw + relative_pos[1] * cos_yaw,
-                    relative_pos[2]
-                ])
-                
-                # 世界坐标位置
-                world_position = robot_position + rotated_pos
-                
-                # 传感器方向（加上机器人朝向）
-                sensor_yaw = robot_yaw + relative_rot[2]
-                orientation_quat = self._euler_to_quaternion([relative_rot[0], relative_rot[1], sensor_yaw])
-                
-                # 更新传感器位置
-                sensor_prim = stage.GetPrimAtPath(sensor_path)
-                if sensor_prim.IsValid():
-                    translate_attr = sensor_prim.GetAttribute("xformOp:translate")
-                    if translate_attr:
-                        translate_attr.Set(Gf.Vec3d(world_position[0], world_position[1], world_position[2]))
+            # 使用官方教程的可视化方式
+            (action_graph, new_nodes, _, _) = og.Controller.edit(
+                {"graph_path": graph_path, "evaluator_name": "execution"},
+                {
+                    og.Controller.Keys.CREATE_NODES: [
+                        ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+                        ("IsaacReadLightBeam", "isaacsim.sensors.physx.IsaacReadLightBeam"),
+                        ("DebugDrawRayCast", "isaacsim.util.debug_draw.DebugDrawRayCast"),
+                    ],
+                    og.Controller.Keys.SET_VALUES: [
+                        ("IsaacReadLightBeam.inputs:lightbeamPrim", sensor_path),
+                    ],
+                    og.Controller.Keys.CONNECT: [
+                        ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam.inputs:execIn"),
+                        ("IsaacReadLightBeam.outputs:execOut", "DebugDrawRayCast.inputs:exec"),
+                        ("IsaacReadLightBeam.outputs:beamOrigins", "DebugDrawRayCast.inputs:beamOrigins"),
+                        ("IsaacReadLightBeam.outputs:beamEndPoints", "DebugDrawRayCast.inputs:beamEndPoints"),
+                        ("IsaacReadLightBeam.outputs:numRays", "DebugDrawRayCast.inputs:numRays"),
+                    ],
+                },
+            )
+            
+            if self.config.DEBUG["enable_debug_output"]:
+                print(f"   ✅ 传感器 {sensor_name} 可视化创建成功")
+            return True
+            
+        except Exception as e:
+            if self.config.DEBUG["enable_debug_output"]:
+                print(f"传感器 {sensor_name} 可视化创建失败: {e}")
+            return False
+    
+    def update_sensor_positions(self, robot_position, robot_yaw):
+        """更新所有传感器位置和方向（官方教程优化版）"""
+        if not self.initialized:
+            return
+        
+        try:
+            import omni.usd
+            stage = omni.usd.get_context().get_stage()
+            
+            # 计算旋转矩阵（绕Z轴旋转robot_yaw角度）
+            cos_yaw = np.cos(robot_yaw)
+            sin_yaw = np.sin(robot_yaw)
+            rotation_matrix = np.array([
+                [cos_yaw, -sin_yaw, 0],
+                [sin_yaw, cos_yaw, 0],
+                [0, 0, 1]
+            ])
+            
+            for sensor_name, sensor_info in self.sensors.items():
+                try:
+                    sensor_config = sensor_info["config"]
+                    sensor_prim = sensor_info["prim"]
                     
-                    orient_attr = sensor_prim.GetAttribute("xformOp:orient")
-                    if orient_attr:
-                        orient_attr.Set(Gf.Quatd(orientation_quat[3], orientation_quat[0], orientation_quat[1], orientation_quat[2]))
+                    if sensor_prim and sensor_prim.IsValid():
+                        # 计算传感器相对位置（考虑机器人旋转）
+                        relative_pos = np.array(sensor_config["relative_position"])
+                        rotated_offset = rotation_matrix @ relative_pos
+                        new_position = robot_position + rotated_offset
                         
+                        # 使用官方教程的位置更新方式
+                        translate_attr = sensor_prim.GetAttribute("xformOp:translate")
+                        if translate_attr:
+                            translate_attr.Set(Gf.Vec3d(new_position[0], new_position[1], new_position[2]))
+                        else:
+                            # 如果没有translate属性，创建一个
+                            from pxr import UsdGeom
+                            xform = UsdGeom.Xform(sensor_prim)
+                            translate_op = xform.AddTranslateOp()
+                            translate_op.Set(Gf.Vec3d(new_position[0], new_position[1], new_position[2]))
+                        
+                        # 更新方向（四元数旋转）
+                        try:
+                            from scipy.spatial.transform import Rotation as R
+                            r = R.from_euler('z', robot_yaw)
+                            quat = r.as_quat()  # [x, y, z, w]
+                            # USD使用 [w, x, y, z] 格式，并且需要 GfQuatf 类型
+                            orientation = Gf.Quatf(float(quat[3]), float(quat[0]), float(quat[1]), float(quat[2]))
+                            
+                            orient_attr = sensor_prim.GetAttribute("xformOp:orient")
+                            if orient_attr:
+                                orient_attr.Set(orientation)
+                            else:
+                                from pxr import UsdGeom
+                                xform = UsdGeom.Xform(sensor_prim)
+                                orient_op = xform.AddOrientOp()
+                                orient_op.Set(orientation)
+                                
+                        except ImportError:
+                            # 如果没有scipy，使用简单的Z轴旋转
+                            half_angle = robot_yaw / 2.0
+                            quat = Gf.Quatf(float(np.cos(half_angle)), 0.0, 0.0, float(np.sin(half_angle)))
+                            
+                            orient_attr = sensor_prim.GetAttribute("xformOp:orient")
+                            if orient_attr:
+                                orient_attr.Set(quat)
+                                
+                except Exception as sensor_update_error:
+                    if self.config.DEBUG["enable_debug_output"]:
+                        print(f"更新传感器 {sensor_name} 位置失败: {sensor_update_error}")
+                    continue
+                
         except Exception as e:
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"更新传感器位置失败: {e}")
     
-    def get_distance_measurements(self) -> Dict[str, Any]:
-        """获取所有传感器的距离测量数据 - 修复版"""
-        measurements = {
-            'min_distance': float('inf'),
-            'raw_distances': [],
-            'sensor_data': {},
-            'obstacle_detected': False,
-            'avoidance_level': OSGTAvoidanceLevel.SAFE,
-            'obstacle_directions': [],
-            'data_valid': False
-        }
+    def get_distance_readings(self):
+        """获取所有传感器的距离读数（官方教程方式）"""
+        if not self.initialized or not self.lightbeam_interface or not self.timeline:
+            return {}
+        
+        readings = {}
         
         try:
-            # 确保仿真正在运行
-            if not self.timeline or not self.timeline.is_playing():
-                if self.config.DEBUG["show_lightbeam_status"]:
-                    print("📡 LightBeam: 仿真未运行")
-                return measurements
-            
-            if not self.lightbeam_interface:
-                print("❌ LightBeam接口未初始化")
-                return measurements
-            
-            all_distances = []
-            raw_distances = []
-            obstacle_directions = []
-            valid_data_count = 0
-            
-            for sensor_path in self.sensor_paths:
-                sensor_config = self.sensor_data[sensor_path]['config']
+            # 使用官方教程的timeline检查方式
+            if not self.timeline.is_playing():
+                return readings
+        except Exception as timeline_error:
+            if self.config.DEBUG["enable_debug_output"]:
+                print(f"获取timeline失败: {timeline_error}")
+            return readings
+        
+        try:
+            for sensor_name, sensor_info in self.sensors.items():
+                sensor_path = sensor_info["path"]
+                sensor_config = sensor_info["config"]
                 
                 try:
-                    # 获取传感器数据（使用正确的方法）
+                    # 使用官方教程的数据获取方式
                     linear_depth = self.lightbeam_interface.get_linear_depth_data(sensor_path)
                     beam_hit = self.lightbeam_interface.get_beam_hit_data(sensor_path)
-                    hit_pos = self.lightbeam_interface.get_hit_pos_data(sensor_path)
                     
-                    if linear_depth is not None and beam_hit is not None:
-                        # 转换为numpy数组并确保类型正确
-                        linear_depth = np.array(linear_depth)
-                        beam_hit = np.array(beam_hit).astype(bool)
+                    if linear_depth is not None and len(linear_depth) > 0 and beam_hit is not None:
+                        # 转换为布尔类型
+                        beam_hit_bool = beam_hit.astype(bool)
+                        valid_distances = []
                         
-                        if len(linear_depth) > 0 and len(beam_hit) > 0:
-                            valid_distances = []
-                            
-                            for i in range(min(len(linear_depth), len(beam_hit))):
+                        # 使用官方教程的距离过滤方式
+                        for i in range(len(linear_depth)):
+                            if beam_hit_bool[i]:  # 如果光束命中
                                 distance = linear_depth[i]
-                                hit = beam_hit[i]
-                                
-                                # 记录所有原始距离数据
-                                raw_distances.append({
-                                    'sensor': sensor_config['name'],
-                                    'beam': i,
-                                    'distance': distance,
-                                    'hit': hit
-                                })
-                                
-                                if hit and 0.1 < distance < 100.0:  # 扩大有效范围
+                                # 过滤有效距离范围（参考官方教程的过滤方式）
+                                if sensor_config["min_range"] < distance < sensor_config["max_range"]:
                                     valid_distances.append(distance)
-                                    all_distances.append(distance)
-                                    valid_data_count += 1
-                                    
-                                    # 计算障碍物方向
-                                    if hit_pos is not None and len(hit_pos) > i:
-                                        try:
-                                            hit_position = hit_pos[i]
-                                            robot_pos = self._get_robot_position()
-                                            
-                                            direction = np.array([hit_position[0] - robot_pos[0], 
-                                                                hit_position[1] - robot_pos[1]])
-                                            if np.linalg.norm(direction) > 0:
-                                                direction = direction / np.linalg.norm(direction)
-                                                obstacle_directions.append(direction)
-                                        except:
-                                            pass
+                        
+                        if valid_distances:
+                            min_distance = min(valid_distances)
+                            status = self._get_distance_status(min_distance)
+                            readings[sensor_name] = {
+                                "distance": min_distance,
+                                "status": status,
+                                "all_distances": valid_distances,
+                                "beam_count": len(valid_distances)
+                            }
+                            self.last_distances[sensor_name] = min_distance
                             
-                            # 记录传感器数据
-                            if valid_distances:
-                                measurements['sensor_data'][sensor_path] = {
-                                    'name': sensor_config['name'],
-                                    'min_distance': min(valid_distances),
-                                    'distances': valid_distances,
-                                    'num_hits': len(valid_distances)
-                                }
-                            
-                            self.detection_stats['successful_reads'] += 1
-                            
+                            # 更新统计
+                            if status == "safe":
+                                self.stats["safe_readings"] += 1
+                            elif status == "warning":
+                                self.stats["warning_readings"] += 1
+                            elif status == "critical":
+                                self.stats["critical_readings"] += 1
                         else:
-                            if self.config.DEBUG["show_lightbeam_status"]:
-                                print(f"   {sensor_config['name']}: 空数据")
+                            readings[sensor_name] = {
+                                "distance": None,
+                                "status": "no_detection",
+                                "all_distances": [],
+                                "beam_count": 0
+                            }
                     else:
-                        self.detection_stats['data_read_failures'] += 1
-                        if self.config.DEBUG["show_lightbeam_status"]:
-                            print(f"   {sensor_config['name']}: 数据读取失败")
-                            
-                except Exception as e:
-                    self.detection_stats['data_read_failures'] += 1
-                    if self.config.DEBUG["show_lightbeam_status"]:
-                        print(f"   {sensor_config['name']}: 异常 - {e}")
-            
-            # 设置原始距离数据
-            measurements['raw_distances'] = raw_distances
-            self.raw_distances = raw_distances
-            
-            # 计算整体最小距离
-            if all_distances:
-                measurements['min_distance'] = min(all_distances)
-                measurements['obstacle_detected'] = True
-                measurements['obstacle_directions'] = obstacle_directions
-                measurements['data_valid'] = True
+                        readings[sensor_name] = {
+                            "distance": None,
+                            "status": "no_detection", 
+                            "all_distances": [],
+                            "beam_count": 0
+                        }
+                        
+                except Exception as sensor_error:
+                    # 单个传感器错误不影响其他传感器
+                    if self.config.DEBUG["enable_debug_output"]:
+                        print(f"传感器 {sensor_name} 读取失败: {sensor_error}")
+                    readings[sensor_name] = {
+                        "distance": None,
+                        "status": "error",
+                        "all_distances": [],
+                        "beam_count": 0
+                    }
                 
-                # 确定避障级别（使用当前物体类型的阈值）
-                min_dist = measurements['min_distance']
-                if min_dist <= self.distance_thresholds['danger']:
-                    measurements['avoidance_level'] = OSGTAvoidanceLevel.DANGER
-                elif min_dist <= self.distance_thresholds['caution']:
-                    measurements['avoidance_level'] = OSGTAvoidanceLevel.CAUTION
-                else:
-                    measurements['avoidance_level'] = OSGTAvoidanceLevel.SAFE
-                
-                # 更新统计
-                self._update_detection_stats(measurements['avoidance_level'], min_dist)
-            else:
-                # 没有检测到有效距离
-                measurements['data_valid'] = valid_data_count > 0
-            
-            return measurements
-            
         except Exception as e:
-            self.detection_stats['data_read_failures'] += 1
             if self.config.DEBUG["enable_debug_output"]:
-                print(f"获取距离测量失败: {e}")
-            return measurements
+                print(f"获取传感器读数失败: {e}")
+        
+        return readings
     
-    def compute_avoidance_velocity(self, desired_linear_vel: float, desired_angular_vel: float) -> Tuple[float, float]:
-        """计算避障速度修正"""
-        try:
-            # 获取最新的距离测量
-            measurements = self.get_distance_measurements()
-            
-            if not measurements['obstacle_detected'] or not measurements['data_valid']:
-                self.current_avoidance_level = OSGTAvoidanceLevel.SAFE
-                return desired_linear_vel, desired_angular_vel
-            
-            min_distance = measurements['min_distance']
-            avoidance_level = measurements['avoidance_level']
-            obstacle_directions = measurements['obstacle_directions']
-            
-            self.current_avoidance_level = avoidance_level
-            self.min_distance = min_distance
-            self.obstacle_directions = obstacle_directions
-            
-            # 根据避障级别计算速度修正
-            if avoidance_level == OSGTAvoidanceLevel.SAFE:
-                return desired_linear_vel, desired_angular_vel
-            
-            elif avoidance_level == OSGTAvoidanceLevel.CAUTION:
-                return self._compute_caution_avoidance(desired_linear_vel, desired_angular_vel, 
-                                                     min_distance, obstacle_directions)
-            
-            elif avoidance_level == OSGTAvoidanceLevel.DANGER:
-                return self._compute_danger_avoidance(desired_linear_vel, desired_angular_vel, 
-                                                    min_distance, obstacle_directions)
-            
-        except Exception as e:
-            print(f"计算避障速度失败: {e}")
-            return desired_linear_vel, desired_angular_vel
+    def _get_distance_status(self, distance):
+        """根据距离返回三级状态"""
+        if distance >= self.distance_thresholds["safe_distance"]:
+            return "safe"
+        elif distance >= self.distance_thresholds["warning_distance"]:
+            return "warning"
+        else:
+            return "critical"
     
-    def _compute_caution_avoidance(self, linear_vel: float, angular_vel: float, 
-                                  min_distance: float, obstacle_directions: List[np.ndarray]) -> Tuple[float, float]:
-        """计算谨慎避障（较近距离）"""
-        params = self.avoidance_params['caution']
+    def get_obstacle_analysis(self):
+        """获取障碍物分析结果"""
+        readings = self.get_distance_readings()
         
-        # 速度衰减因子
-        distance_factor = (min_distance - self.distance_thresholds['danger']) / \
-                         (self.distance_thresholds['caution'] - self.distance_thresholds['danger'])
-        distance_factor = np.clip(distance_factor, 0.0, 1.0)
+        analysis = {
+            "overall_status": "safe",
+            "min_distance": float('inf'),
+            "critical_directions": [],
+            "warning_directions": [],
+            "safe_directions": [],
+            "avoidance_recommendation": None,
+            "direction_analysis": {
+                "front": "safe",
+                "back": "safe", 
+                "left": "safe",
+                "right": "safe"
+            }
+        }
         
-        # 线速度衰减
-        speed_reduction = params['speed_reduction_factor'] * (1.0 - distance_factor)
-        modified_linear_vel = linear_vel * (1.0 - speed_reduction)
+        # 按方向分组分析
+        direction_groups = {
+            "front": ["front_bottom", "front_top"],
+            "back": ["back_bottom", "back_top"],
+            "left": ["left_bottom", "left_top"],
+            "right": ["right_bottom", "right_top"]
+        }
         
-        # 计算避障转向
-        avoidance_angular = 0.0
-        if obstacle_directions:
-            # 计算主要障碍物方向
-            avg_direction = np.mean(obstacle_directions, axis=0)
-            robot_heading = np.array([1.0, 0.0])  # 假设机器人朝向X轴正方向
+        for direction, sensor_names in direction_groups.items():
+            direction_status = "safe"
+            min_dir_distance = float('inf')
             
-            # 计算垂直方向（右转或左转）
-            cross_product = np.cross(robot_heading, avg_direction)
-            turn_direction = 1.0 if cross_product > 0 else -1.0
+            for sensor_name in sensor_names:
+                if sensor_name in readings and readings[sensor_name]["distance"] is not None:
+                    distance = readings[sensor_name]["distance"]
+                    status = readings[sensor_name]["status"]
+                    
+                    if distance < min_dir_distance:
+                        min_dir_distance = distance
+                    
+                    if status == "critical":
+                        direction_status = "critical"
+                    elif status == "warning" and direction_status == "safe":
+                        direction_status = "warning"
             
-            # 避障角速度
-            avoidance_strength = params['avoidance_strength'] * (1.0 - distance_factor)
-            avoidance_angular = turn_direction * avoidance_strength
-        
-        # 结合原始角速度和避障角速度
-        modified_angular_vel = angular_vel * params['angular_response'] + avoidance_angular
-        
-        # 平滑处理
-        modified_linear_vel, modified_angular_vel = self._smooth_avoidance_command(
-            modified_linear_vel, modified_angular_vel, params['smoothing_factor']
-        )
-        
-        if self.config.DEBUG["show_navigation_progress"]:
-            print(f"   🟡 谨慎避障: 距离={min_distance:.2f}m, 速度={modified_linear_vel:.2f}, 转向={modified_angular_vel:.2f}")
-        
-        return modified_linear_vel, modified_angular_vel
-    
-    def _compute_danger_avoidance(self, linear_vel: float, angular_vel: float, 
-                                 min_distance: float, obstacle_directions: List[np.ndarray]) -> Tuple[float, float]:
-        """计算紧急避障（即将碰撞）"""
-        params = self.avoidance_params['danger']
-        
-        # 紧急制动
-        emergency_factor = min_distance / self.distance_thresholds['danger']
-        emergency_factor = np.clip(emergency_factor, 0.0, 1.0)
-        
-        # 强制减速
-        modified_linear_vel = linear_vel * emergency_factor * params['emergency_speed_factor']
-        
-        # 强制转向避障
-        avoidance_angular = 0.0
-        if obstacle_directions:
-            # 计算紧急转向方向
-            avg_direction = np.mean(obstacle_directions, axis=0)
-            robot_heading = np.array([1.0, 0.0])
+            analysis["direction_analysis"][direction] = direction_status
             
-            # 选择转向方向（远离障碍物）
-            cross_product = np.cross(robot_heading, avg_direction)
-            turn_direction = 1.0 if cross_product > 0 else -1.0
+            if direction_status == "critical":
+                analysis["critical_directions"].append(direction)
+                analysis["overall_status"] = "critical"
+            elif direction_status == "warning":
+                analysis["warning_directions"].append(direction)
+                if analysis["overall_status"] == "safe":
+                    analysis["overall_status"] = "warning"
+            else:
+                analysis["safe_directions"].append(direction)
             
-            # 紧急转向
-            avoidance_angular = turn_direction * params['emergency_turn_rate']
+            if min_dir_distance < analysis["min_distance"]:
+                analysis["min_distance"] = min_dir_distance
         
-        # 紧急情况下优先避障
-        modified_angular_vel = avoidance_angular + angular_vel * params['angular_override']
-        
-        # 限制在安全范围内
-        max_linear = self.config.ROBOT_CONTROL["max_linear_velocity"] * params['max_speed_limit']
-        max_angular = self.config.ROBOT_CONTROL["max_angular_velocity"] * params['max_angular_limit']
-        
-        modified_linear_vel = np.clip(modified_linear_vel, -max_linear, max_linear)
-        modified_angular_vel = np.clip(modified_angular_vel, -max_angular, max_angular)
-        
-        # 轻微平滑（紧急情况下响应要快）
-        modified_linear_vel, modified_angular_vel = self._smooth_avoidance_command(
-            modified_linear_vel, modified_angular_vel, params['smoothing_factor']
-        )
-        
-        if self.config.DEBUG["show_navigation_progress"]:
-            print(f"   🔴 紧急避障: 距离={min_distance:.2f}m, 速度={modified_linear_vel:.2f}, 转向={modified_angular_vel:.2f}")
+        # 生成避障建议
+        analysis["avoidance_recommendation"] = self._generate_avoidance_recommendation(analysis)
         
         # 更新统计
-        self.detection_stats['avoidance_activations'] += 1
+        if analysis["overall_status"] != "safe":
+            self.stats["obstacle_detections"] += 1
         
-        return modified_linear_vel, modified_angular_vel
+        return analysis
     
-    def _smooth_avoidance_command(self, linear_vel: float, angular_vel: float, smoothing: float) -> Tuple[float, float]:
-        """平滑避障命令"""
-        # 与历史命令平滑
-        smoothed_linear = smoothing * self.last_avoidance_command[0] + (1 - smoothing) * linear_vel
-        smoothed_angular = smoothing * self.last_avoidance_command[1] + (1 - smoothing) * angular_vel
+    def _generate_avoidance_recommendation(self, analysis):
+        """生成避障建议"""
+        if analysis["overall_status"] == "safe":
+            return {
+                "action": "continue", 
+                "linear_scale": 1.0, 
+                "angular_scale": 1.0,
+                "description": "路径畅通，继续前进"
+            }
         
-        # 更新历史
-        self.last_avoidance_command = (smoothed_linear, smoothed_angular)
-        self.avoidance_history.append((smoothed_linear, smoothed_angular))
+        elif analysis["overall_status"] == "warning":
+            return {
+                "action": "slow_down", 
+                "linear_scale": 0.6, 
+                "angular_scale": 0.8,
+                "description": "检测到障碍物，预防性减速"
+            }
         
-        return smoothed_linear, smoothed_angular
-    
-    def _update_detection_stats(self, avoidance_level: OSGTAvoidanceLevel, distance: float):
-        """更新检测统计"""
-        self.detection_stats['total_detections'] += 1
+        elif analysis["overall_status"] == "critical":
+            # 危险状态：根据方向选择避障策略
+            direction_analysis = analysis["direction_analysis"]
+            
+            front_blocked = direction_analysis["front"] == "critical"
+            back_blocked = direction_analysis["back"] == "critical"
+            left_blocked = direction_analysis["left"] == "critical"
+            right_blocked = direction_analysis["right"] == "critical"
+            
+            # 智能避障策略
+            if front_blocked and not back_blocked:
+                if not left_blocked and not right_blocked:
+                    return {
+                        "action": "turn_right",
+                        "linear_scale": 0.2,
+                        "angular_scale": -0.8,
+                        "description": "前方受阻，右转避障"
+                    }
+                elif not left_blocked:
+                    return {
+                        "action": "turn_left",
+                        "linear_scale": 0.15,
+                        "angular_scale": 0.8,
+                        "description": "前方右侧受阻，左转避障"
+                    }
+                elif not right_blocked:
+                    return {
+                        "action": "turn_right",
+                        "linear_scale": 0.15,
+                        "angular_scale": -0.8,
+                        "description": "前方左侧受阻，右转避障"
+                    }
+                else:
+                    return {
+                        "action": "reverse",
+                        "linear_scale": -0.3,
+                        "angular_scale": 0.0,
+                        "description": "前方完全受阻，后退重新规划"
+                    }
+            
+            elif left_blocked and not right_blocked:
+                return {
+                    "action": "turn_right",
+                    "linear_scale": 0.1,
+                    "angular_scale": -0.7,
+                    "description": "左侧受阻，右转避障"
+                }
+            
+            elif right_blocked and not left_blocked:
+                return {
+                    "action": "turn_left",
+                    "linear_scale": 0.1,
+                    "angular_scale": 0.7,
+                    "description": "右侧受阻，左转避障"
+                }
+            
+            else:
+                # 四面受阻，紧急停止
+                return {
+                    "action": "emergency_stop",
+                    "linear_scale": 0.0,
+                    "angular_scale": 0.0,
+                    "description": "四面受阻，紧急停止"
+                }
         
-        if avoidance_level == OSGTAvoidanceLevel.SAFE:
-            self.detection_stats['safe_detections'] += 1
-        elif avoidance_level == OSGTAvoidanceLevel.CAUTION:
-            self.detection_stats['caution_detections'] += 1
-        elif avoidance_level == OSGTAvoidanceLevel.DANGER:
-            self.detection_stats['danger_detections'] += 1
-        
-        if distance < self.detection_stats['min_distance_recorded']:
-            self.detection_stats['min_distance_recorded'] = distance
-    
-    def print_detection_status(self):
-        """打印检测状态"""
-        measurements = self.get_distance_measurements()
-        
-        print(f"\n📡 OSGT LightBeam检测状态 ({self.current_object_type}模式):")
-        print(f"   最小距离: {measurements['min_distance']:.3f}m")
-        print(f"   避障级别: {measurements['avoidance_level'].value}")
-        print(f"   障碍物检测: {'是' if measurements['obstacle_detected'] else '否'}")
-        print(f"   数据有效: {'是' if measurements['data_valid'] else '否'}")
-        
-        # 显示当前阈值
-        print(f"   当前阈值: 安全>{self.distance_thresholds['safe']:.1f}m, "
-              f"谨慎>{self.distance_thresholds['caution']:.1f}m, "
-              f"危险>{self.distance_thresholds['danger']:.1f}m")
-        
-        # 显示原始距离数据
-        if measurements['raw_distances']:
-            print(f"   原始距离数据:")
-            for data in measurements['raw_distances'][:16]:  # 只显示前10个
-                status = "命中" if data['hit'] else "未命中"
-                print(f"     {data['sensor']}-光束{data['beam']}: {data['distance']:.3f}m ({status})")
-            if len(measurements['raw_distances']) > 16:
-                print(f"     ... 还有{len(measurements['raw_distances'])-16}个数据点")
-        
-        if measurements['sensor_data']:
-            print(f"   传感器详情:")
-            for sensor_path, data in measurements['sensor_data'].items():
-                print(f"     {data['name']}: {data['min_distance']:.3f}m ({data['num_hits']}个命中)")
-    
-    def print_detection_stats(self):
-        """打印检测统计"""
-        stats = self.detection_stats
-        total = stats['total_detections']
-        total_reads = stats['successful_reads'] + stats['data_read_failures']
-        
-        print(f"\n📊 OSGT LightBeam统计:")
-        if total > 0:
-            print(f"   总检测次数: {total}")
-            print(f"   安全检测: {stats['safe_detections']} ({stats['safe_detections']/total*100:.1f}%)")
-            print(f"   谨慎检测: {stats['caution_detections']} ({stats['caution_detections']/total*100:.1f}%)")
-            print(f"   危险检测: {stats['danger_detections']} ({stats['danger_detections']/total*100:.1f}%)")
-            print(f"   避障激活: {stats['avoidance_activations']}")
-            print(f"   最近距离: {stats['min_distance_recorded']:.3f}m")
-        
-        if total_reads > 0:
-            success_rate = stats['successful_reads'] / total_reads * 100
-            print(f"   数据读取成功率: {success_rate:.1f}% ({stats['successful_reads']}/{total_reads})")
-    
-    def _get_robot_position(self) -> np.ndarray:
-        """获取机器人位置"""
-        try:
-            # 简化版本，假设机器人在原点附近
-            return np.array([0.0, 0.0, 0.0])
-        except:
-            return np.array([0.0, 0.0, 0.0])
-    
-    def _euler_to_quaternion(self, euler_angles: List[float]) -> np.ndarray:
-        """欧拉角转四元数 [roll, pitch, yaw] -> [x, y, z, w]"""
-        roll, pitch, yaw = euler_angles
-        
-        cy = np.cos(yaw * 0.5)
-        sy = np.sin(yaw * 0.5)
-        cp = np.cos(pitch * 0.5)
-        sp = np.sin(pitch * 0.5)
-        cr = np.cos(roll * 0.5)
-        sr = np.sin(roll * 0.5)
-        
-        qw = cr * cp * cy + sr * sp * sy
-        qx = sr * cp * cy - cr * sp * sy
-        qy = cr * sp * cy + sr * cp * sy
-        qz = cr * cp * sy - sr * sp * cy
-        
-        return np.array([qx, qy, qz, qw])
-    
-    def is_safe_to_move(self) -> bool:
-        """检查是否安全移动"""
-        return self.current_avoidance_level == OSGTAvoidanceLevel.SAFE
-    
-    def get_current_avoidance_level(self) -> OSGTAvoidanceLevel:
-        """获取当前避障级别"""
-        return self.current_avoidance_level
-    
-    def reset_stats(self):
-        """重置统计数据"""
-        self.detection_stats = {
-            'total_detections': 0,
-            'safe_detections': 0,
-            'caution_detections': 0,
-            'danger_detections': 0,
-            'avoidance_activations': 0,
-            'min_distance_recorded': float('inf'),
-            'data_read_failures': 0,
-            'successful_reads': 0
+        return {
+            "action": "stop", 
+            "linear_scale": 0.0, 
+            "angular_scale": 0.0,
+            "description": "未知状态，停止运动"
         }
-        self.avoidance_history.clear()
-        self.last_avoidance_command = (0.0, 0.0)
-
-
-def create_osgt_lightbeam_system(config: Dict[str, Any], world, robot_prim_path: str) -> OSGTLightBeamSensorSystem:
-    """创建OSGT LightBeam系统"""
-    return OSGTLightBeamSensorSystem(config, world, robot_prim_path)
+    
+    def apply_avoidance_control(self, base_linear_vel, base_angular_vel):
+        """应用避障控制，返回修正后的速度"""
+        if not self.initialized:
+            return base_linear_vel, base_angular_vel
+        
+        analysis = self.get_obstacle_analysis()
+        recommendation = analysis["avoidance_recommendation"]
+        
+        if recommendation is None:
+            return base_linear_vel, base_angular_vel
+        
+        current_time = time.time()
+        
+        # 检查避障冷却时间
+        if (self.avoidance_active and 
+            current_time - self.last_avoidance_time < self.avoidance_cooldown):
+            return base_linear_vel * 0.5, base_angular_vel * 0.5
+        
+        action = recommendation["action"]
+        linear_scale = recommendation["linear_scale"]
+        angular_scale = recommendation["angular_scale"]
+        
+        if action == "continue":
+            return base_linear_vel, base_angular_vel
+        
+        elif action == "slow_down":
+            return base_linear_vel * linear_scale, base_angular_vel * angular_scale
+        
+        elif action in ["turn_left", "turn_right"]:
+            self.avoidance_active = True
+            self.last_avoidance_time = current_time
+            self.stats["avoidance_actions"] += 1
+            
+            if self.config.DEBUG["show_navigation_progress"]:
+                print(f"🔄 执行避障动作: {recommendation['description']}")
+            
+            return base_linear_vel * linear_scale, base_angular_vel + (angular_scale * 1.5)
+        
+        elif action == "reverse":
+            self.avoidance_active = True
+            self.last_avoidance_time = current_time
+            self.stats["avoidance_actions"] += 1
+            
+            if self.config.DEBUG["show_navigation_progress"]:
+                print(f"⬅️ 执行避障动作: {recommendation['description']}")
+            
+            return linear_scale, angular_scale
+        
+        elif action in ["emergency_stop", "stop"]:
+            self.avoidance_active = True
+            self.last_avoidance_time = current_time
+            
+            if self.config.DEBUG["show_navigation_progress"]:
+                print(f"🛑 执行避障动作: {recommendation['description']}")
+            
+            return 0.0, 0.0
+        
+        return base_linear_vel, base_angular_vel
+    
+    def is_path_clear(self, direction="front", threshold="warning"):
+        """检查指定方向是否畅通"""
+        if not self.initialized:
+            return True
+        
+        try:
+            readings = self.get_distance_readings()
+            
+            direction_sensors = {
+                "front": ["front_bottom", "front_top"],
+                "back": ["back_bottom", "back_top"],
+                "left": ["left_bottom", "left_top"],
+                "right": ["right_bottom", "right_top"]
+            }
+            
+            relevant_sensors = direction_sensors.get(direction, [])
+            
+            for sensor_name in relevant_sensors:
+                if sensor_name in readings:
+                    reading = readings[sensor_name]
+                    if reading["distance"] is not None:
+                        status = reading["status"]
+                        if threshold == "warning" and status in ["warning", "critical"]:
+                            return False
+                        elif threshold == "critical" and status == "critical":
+                            return False
+            
+            return True
+            
+        except Exception as e:
+            if self.config.DEBUG["enable_debug_output"]:
+                print(f"路径检查失败: {e}")
+            return True
+    
+    def print_sensor_status(self, detailed=False):
+        """打印传感器状态"""
+        if not self.initialized:
+            print("⚠️ LightBeam传感器系统未初始化")
+            return
+        
+        readings = self.get_distance_readings()
+        analysis = self.get_obstacle_analysis()
+        
+        print(f"\n📡 LightBeam传感器状态 (8方向):")
+        print(f"   整体状态: {self._get_status_emoji(analysis['overall_status'])} {analysis['overall_status'].upper()}")
+        
+        if analysis['min_distance'] < float('inf'):
+            print(f"   最小距离: {analysis['min_distance']:.2f}m")
+        else:
+            print(f"   最小距离: 无检测")
+        
+        if detailed:
+            # 详细模式：显示所有传感器
+            for sensor_name, reading in readings.items():
+                if reading["distance"] is not None:
+                    status_emoji = self._get_status_emoji(reading["status"])
+                    print(f"   {sensor_name:15}: {status_emoji} {reading['distance']:.2f}m ({reading['beam_count']}束)")
+                else:
+                    print(f"   {sensor_name:15}: ⚫ 无检测")
+        else:
+            # 简化模式：按方向显示
+            for direction, status in analysis["direction_analysis"].items():
+                status_emoji = self._get_status_emoji(status)
+                dir_sensors = [name for name in readings.keys() if direction in name]
+                min_dist = min([readings[name]["distance"] for name in dir_sensors 
+                              if name in readings and readings[name]["distance"] is not None], 
+                              default=None)
+                if min_dist is not None:
+                    print(f"   {direction:6}: {status_emoji} {min_dist:.2f}m")
+                else:
+                    print(f"   {direction:6}: ⚫ 无检测")
+        
+        if analysis["avoidance_recommendation"]:
+            rec = analysis["avoidance_recommendation"]
+            print(f"   🤖 建议: {rec['description']}")
+            print(f"   ⚙️ 调整: 线性{rec['linear_scale']:.1f} 角度{rec['angular_scale']:.1f}")
+    
+    def _get_status_emoji(self, status):
+        """获取状态表情符号"""
+        status_emojis = {
+            "safe": "🟢",
+            "warning": "🟡", 
+            "critical": "🔴",
+            "no_detection": "⚫",
+            "error": "❓"
+        }
+        return status_emojis.get(status, "❓")
+    
+    def print_statistics(self):
+        """打印统计信息"""
+        total_readings = sum([self.stats["safe_readings"], 
+                             self.stats["warning_readings"], 
+                             self.stats["critical_readings"]])
+        
+        print(f"\n📊 LightBeam传感器统计:")
+        print(f"   总检测次数: {total_readings}")
+        print(f"   🟢 安全读数: {self.stats['safe_readings']}")
+        print(f"   🟡 警告读数: {self.stats['warning_readings']}")
+        print(f"   🔴 危险读数: {self.stats['critical_readings']}")
+        print(f"   🚨 障碍检测: {self.stats['obstacle_detections']}")
+        print(f"   🔄 避障动作: {self.stats['avoidance_actions']}")
+        
+        if total_readings > 0:
+            safe_rate = (self.stats["safe_readings"] / total_readings) * 100
+            print(f"   📈 安全率: {safe_rate:.1f}%")
+    
+    def cleanup(self):
+        """清理传感器资源"""
+        try:
+            if self.initialized:
+                print("🧹 清理LightBeam传感器资源...")
+                # 这里可以添加清理代码，如果需要的话
+                self.initialized = False
+                print("✅ LightBeam传感器清理完成")
+        except Exception as e:
+            print(f"清理LightBeam传感器失败: {e}")

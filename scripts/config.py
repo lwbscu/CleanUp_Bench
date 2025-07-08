@@ -3,14 +3,13 @@
 OSGT四类物体标准室内清洁系统配置文件（通用版）
 O类-障碍物 | S类-可清扫物 | G类-可抓取物 | T类-任务区
 适配场景：家庭住宅、学校、医院、工厂等
-增加LightBeam光束传感器避障配置
 """
 
 import numpy as np
 import os
 
 class OSGTCleanupSystemConfig:
-    """OSGT标准清洁系统配置类（四类物体通用版+LightBeam避障）"""
+    """OSGT标准清洁系统配置类（四类物体通用版）"""
 
     def __init__(self, username=None, scenario_type="residential"):
         # ==================== 用户配置 ====================
@@ -47,7 +46,7 @@ class OSGTCleanupSystemConfig:
         
         self.BACKGROUND_ENVIRONMENT = {
             # 场景usd文件路径（相对住宅资产库）
-            #"usd_path": "Kitchen_set/Kitchen_set_instanced.usd",
+            "usd_path": "Kitchen_set/Kitchen_set_instanced.usd",
             # 缩放比例
             "scale": 0.02,
             # 位置 [x, y, z]
@@ -74,143 +73,6 @@ class OSGTCleanupSystemConfig:
         # 验证路径有效性
         self._validate_paths()
         
-        # ==================== LIGHTBEAM传感器配置 ====================
-        self.LIGHTBEAM_CONFIG = {
-            # 是否启用LightBeam避障系统
-            "enable_lightbeam": True,
-            
-            # 是否启用可视化
-            "enable_visualization": True,
-            
-            # 距离阈值配置 (米) - 重新分类
-            "distance_thresholds": {
-            # 环境/O类障碍物距离阈值（更大的安全距离）
-            "environment": {
-                "safe": 5.0,        # 环境安全距离
-                "caution": 3.0,     # 环境谨慎距离
-                "danger": 1.5       # 环境危险距离
-            },
-            # S/G/T类物体距离阈值（更小的精确距离）
-            "sgt_objects": {
-                "safe": 2.0,        # 物体安全距离
-                "caution": 1.2,     # 物体谨慎距离 
-                "danger": 0.5       # 物体危险距离
-            }
-            },
-            
-            # 传感器配置列表
-            "sensors": [
-            # 底部高度 (-0.5) 传感器 - 4个方向
-            {
-                "name": "front_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部前方
-                "relative_rotation": [0.0, 0.0, 0.0],    # 朝向前方
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [1, 0, 0]
-            },
-            {
-                "name": "back_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部后方
-                "relative_rotation": [0.0, 0.0, 3.14],   # 朝向后方 (180度)
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [-1, 0, 0]
-            },
-            {
-                "name": "left_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部左侧
-                "relative_rotation": [0.0, 0.0, 1.57],   # 朝向左侧 (90度)
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, 1, 0]
-            },
-            {
-                "name": "right_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部右侧
-                "relative_rotation": [0.0, 0.0, -1.57],  # 朝向右侧 (-90度)
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, -1, 0]
-            },
-            # 顶部高度 (0.4) 传感器 - 4个方向
-            {
-                "name": "front_top",
-                "relative_position": [0, 0, 0.1],        # 顶部前方
-                "relative_rotation": [0.0, 0.0, 0.0],    # 朝向前方
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [1, 0, 0]
-            },
-            {
-                "name": "back_top",
-                "relative_position": [0, 0, 0.1],        # 顶部后方
-                "relative_rotation": [0.0, 0.0, 3.14],   # 朝向后方 (180度)
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [-1, 0, 0]
-            },
-            {
-                "name": "left_top",
-                "relative_position": [0, 0, 0.1],        # 顶部左侧
-                "relative_rotation": [0.0, 0.0, 1.57],   # 朝向左侧 (90度)
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, 1, 0]
-            },
-            {
-                "name": "right_top",
-                "relative_position": [0, 0, 0.1],        # 顶部右侧
-                "relative_rotation": [0.0, 0.0, -1.57],  # 朝向右侧 (-90度)
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, -1, 0]
-            }
-            ],
-            
-            # 避障参数配置
-            "avoidance_parameters": {
-            "caution": {
-                "speed_reduction_factor": 0.4,    # 速度减少40%
-                "avoidance_strength": 0.8,        # 避障转向强度
-                "angular_response": 0.6,          # 原始角速度保留60%
-                "smoothing_factor": 0.3           # 平滑因子
-            },
-            "danger": {
-                "emergency_speed_factor": 0.2,    # 紧急情况下速度减至20%
-                "emergency_turn_rate": 2.5,       # 紧急转向速率 (rad/s)
-                "angular_override": 0.2,          # 原始角速度只保留20%
-                "max_speed_limit": 0.6,           # 最大速度限制因子
-                "max_angular_limit": 0.8,         # 最大角速度限制因子
-                "smoothing_factor": 0.1           # 较少平滑，响应更快
-            }
-            },
-            
-            # 检测和报告配置
-            "detection_settings": {
-            "detection_frequency": 30,           # 检测频率 (Hz)
-            "report_interval": 2.0,              # 状态报告间隔 (秒)
-            "enable_terminal_output": True,      # 启用终端输出
-            "verbose_detection": True            # 详细检测信息
-            }
-        }
-        
         # ==================== OSGT四类物体缩放配置 ====================
         self.SCALE_CONFIG = {
             # O类 - 障碍物缩放
@@ -235,8 +97,8 @@ class OSGTCleanupSystemConfig:
         self.OBSTACLES_POSITIONS = {
             # 格式: "障碍物名": [x, y, z, rotation_z_degrees]
             # 适配多场景：家庭(桌椅)、学校(课桌)、医院(病床)、工厂(设备)
-            "obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
-            "obstacle_2": [130.0, 50.0, 0.0, 0.0],      # 座椅/推车
+            "obstacle_1": [280.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
+            "obstacle_2": [210.0, 60.0, 0.0, 0.0],      # 座椅/推车
             "obstacle_3": [-200.0, 180.0, 0.0, 0.0],    # 中央设施
             "obstacle_4": [350.0, -280.0, 0.0, 45.0],   # 边角设备
             "obstacle_5": [-450.0, -150.0, 0.0, 90.0],  # 存储设施
@@ -247,7 +109,7 @@ class OSGTCleanupSystemConfig:
         self.SWEEPABLE_POSITIONS = {
             # 格式: "可清扫物名": [x, y, z]
             # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
-            "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
+            "sweepable_1": [340.0, 150.0, 0.03],        # 工作区域碎渣
             "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
             "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
             "sweepable_4": [-680.0, 120.0, 0.015],      # 清洁盲区
@@ -436,7 +298,6 @@ class OSGTCleanupSystemConfig:
             "show_robot_state": True,
             "show_navigation_progress": True,
             "show_grasp_details": True,
-            "show_lightbeam_status": True,        # 显示LightBeam状态
             "progress_report_interval": 2.5,
         }
         
@@ -654,50 +515,6 @@ class OSGTCleanupSystemConfig:
                 nav_timeout_sweepable=60
             )
     
-    # ==================== LightBeam配置方法 ====================
-    
-    def update_lightbeam_config(self, **kwargs):
-        """更新LightBeam配置"""
-        for key, value in kwargs.items():
-            if key in self.LIGHTBEAM_CONFIG:
-                self.LIGHTBEAM_CONFIG[key] = value
-                print(f"🔦 LightBeam参数更新: {key} = {value}")
-    
-    def add_lightbeam_sensor(self, name, relative_position, relative_rotation, 
-                           min_range=0.1, max_range=5.0, num_rays=5):
-        """添加新的LightBeam传感器配置"""
-        new_sensor = {
-            "name": name,
-            "relative_position": relative_position,
-            "relative_rotation": relative_rotation,
-            "min_range": min_range,
-            "max_range": max_range,
-            "num_rays": num_rays,
-            "curtain_length": 0.5,
-            "forward_axis": [1, 0, 0]
-        }
-        self.LIGHTBEAM_CONFIG["sensors"].append(new_sensor)
-        print(f"🔦 添加LightBeam传感器: {name} -> {relative_position}")
-    
-    def set_lightbeam_thresholds(self, object_type="environment", safe=None, caution=None, danger=None):
-        """设置LightBeam距离阈值"""
-        if object_type not in ["environment", "sgt_objects"]:
-            print(f"❌ 无效的物体类型: {object_type}")
-            return
-            
-        thresholds = self.LIGHTBEAM_CONFIG["distance_thresholds"][object_type]
-        
-        if safe is not None:
-            thresholds["safe"] = safe
-        if caution is not None:
-            thresholds["caution"] = caution
-        if danger is not None:
-            thresholds["danger"] = danger
-        
-        print(f"🔦 LightBeam {object_type} 阈值更新: 安全={thresholds['safe']}m, "
-              f"谨慎={thresholds['caution']}m, "
-              f"危险={thresholds['danger']}m")
-    
     def print_summary(self):
         """打印OSGT配置摘要"""
         print("\n" + "="*70)
@@ -727,16 +544,4 @@ class OSGTCleanupSystemConfig:
         print(f"🌀 最大角速度: {self.ROBOT_CONTROL['max_angular_velocity']} rad/s")
         print(f"🎯 OSGT导航容差: S类 {self.NAVIGATION['tolerance_sweepable']}m, G类 {self.NAVIGATION['tolerance_graspable']}m")
         print(f"⏱️ OSGT导航超时: S类 {self.NAVIGATION['nav_timeout_sweepable']}s, G类 {self.NAVIGATION['nav_timeout_graspable']}s")
-        
-        # LightBeam配置摘要
-        if hasattr(self, 'LIGHTBEAM_CONFIG'):
-            print(f"🔦 LightBeam避障系统: {'启用' if self.LIGHTBEAM_CONFIG['enable_lightbeam'] else '禁用'}")
-            print(f"   传感器数量: {len(self.LIGHTBEAM_CONFIG['sensors'])}")
-            print(f"   环境距离阈值: 安全={self.LIGHTBEAM_CONFIG['distance_thresholds']['environment']['safe']}m, "
-                  f"谨慎={self.LIGHTBEAM_CONFIG['distance_thresholds']['environment']['caution']}m, "
-                  f"危险={self.LIGHTBEAM_CONFIG['distance_thresholds']['environment']['danger']}m")
-            print(f"   物体距离阈值: 安全={self.LIGHTBEAM_CONFIG['distance_thresholds']['sgt_objects']['safe']}m, "
-                  f"谨慎={self.LIGHTBEAM_CONFIG['distance_thresholds']['sgt_objects']['caution']}m, "
-                  f"危险={self.LIGHTBEAM_CONFIG['distance_thresholds']['sgt_objects']['danger']}m")
-        
         print("="*70)
