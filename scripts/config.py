@@ -96,48 +96,57 @@ class OSGTCleanupSystemConfig:
         # O类 - 障碍物位置配置 (Obstacles)
         self.OBSTACLES_POSITIONS = {
             # 格式: "障碍物名": [x, y, z, rotation_z_degrees]
-            # 适配多场景：家庭(桌椅)、学校(课桌)、医院(病床)、工厂(设备)
-            # "obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
-            # "obstacle_2": [140.0, 60.0, 0.0, 0.0],      # 座椅/推车
-            # "obstacle_3": [-200.0, 180.0, 0.0, 0.0],    # 中央设施
-            # "obstacle_4": [350.0, -280.0, 0.0, 45.0],   # 边角设备
-            # "obstacle_5": [-450.0, -150.0, 0.0, 90.0],  # 存储设施
-            # "obstacle_6": [-380.0, -420.0, 0.0, 0.0],   # 大型设备/书架
+            # Lobby环境障碍物：家具、设备等
+            "chair_b1": [200.0, 150.0, 0.0, 0.0],        # 办公椅1
+            "chair_b2": [180.0, 120.0, 0.0, 45.0],       # 办公椅2
+            "dining_table": [-300.0, 200.0, 0.0, 0.0],   # 会议桌
+            "folding_table": [400.0, -250.0, 0.0, 90.0], # 折叠桌
+            "kitchen_table": [-450.0, -180.0, 0.0, 0.0], # 工作台
+            "stool_wooden": [-200.0, -350.0, 0.0, 0.0],  # 木质凳子
+            "book_stack_01": [320.0, 100.0, 0.0, 0.0],   # 书堆1
+            "encyclopedia": [-150.0, 280.0, 0.0, 0.0],   # 百科全书
         }
         
         # S类 - 可清扫物位置配置 (Sweepable Items)
         self.SWEEPABLE_POSITIONS = {
             # 格式: "可清扫物名": [x, y, z]
-            # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
-            # "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
-            # "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
-            # "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
-            
-            # "sweepable_5": [667.0, 80.0, 0.015],     
-            
-            # "sweepable_7": [-424, -580.0, 0.03],     
+            # Lobby环境小颗粒物质：弹珠、小球、碎片等
+            "bubble_marble_02": [280.0, 150.0, 0.03],    # 气泡弹珠2
+            "bubble_marble_03": [520.0, -320.0, 0.03],   # 气泡弹珠3
+            "solid_marble_01": [-180.0, 450.0, 0.01],    # 实心弹珠
+            "cheerio_geom": [667.0, 80.0, 0.015],        # 小圆环
+            "d20_01": [-424, -580.0, 0.03],              # 20面骰子
+            "metalballs": [350.0, 220.0, 0.02],          # 金属球
+            "plasticballs": [-250.0, -120.0, 0.02],      # 塑料球
+            "caster_bearing": [180.0, -380.0, 0.01],     # 脚轮轴承
         }
         
         # G类 - 可抓取物位置配置 (Graspable Items)
         self.GRASPABLE_POSITIONS = {
             # 格式: "可抓取物名": [x, y, z]
-            # 工具、容器、书籍、零件等需要机械臂抓取的物体
-            # "orange2": [680.0, 165.0, 0.1],
-            # "lemon2": [505.0, -266.0, 0.1],
-            # "tin_can": [240.0, -75.0, 0.05],
-            # "bottle": [650, -44, 0.1],
-            # "cup": [332, 33, 0.1],
-            # "fork": [-316, -391, 0.1],
+            # 马克笔到小水瓶大小的可抓取物体
+            "mechanical_pencil": [680.0, 165.0, 0.1],   # 机械铅笔
+            "makerpen": [505.0, -266.0, 0.1],           # 马克笔
+            "cup": [240.0, -75.0, 0.05],                # 杯子
+            "bottle": [650, -44, 0.1],                  # 瓶子
+            "tin_can": [332, 33, 0.1],                  # 罐头
+            "fork": [-316, -391, 0.1],                  # 叉子
+            "book": [420.0, 250.0, 0.02],               # 书籍
+            "ball": [-520.0, 180.0, 0.05],              # 球
+            "jar": [150.0, 350.0, 0.08],                # 罐子
+            "eraser": [-280.0, -150.0, 0.02],           # 橡皮擦
+            "spoon": [480.0, 120.0, 0.05],              # 勺子
+            "salt_shaker": [-180.0, 320.0, 0.08],       # 盐瓶
         }
         
         # T类 - 任务区位置配置 (Task Areas)
         self.TASK_AREAS_POSITIONS = {
             # 格式: "任务区名": [x, y, z, rotation_z_degrees]
             # 回收区、分拣区、存放区等
-            # "collection_zone_s": [800.0, 800.0, 0.0, 0.0],     # S类回收区
-            # "collection_zone_g": [-800.0, 800.0, 0.0, 0.0],    # G类存放区
-            # "sorting_area": [0.0, 900.0, 0.0, 0.0],             # 分拣中心
-            # "maintenance_station": [0.0, -900.0, 0.0, 0.0],     # 维护站点
+            "trash_can": [800.0, 800.0, 0.0, 0.0],          # 垃圾桶(S类回收区)
+            "collection_zone_g": [-800.0, 800.0, 0.0, 0.0], # G类存放区(可以复用垃圾桶资产)
+            "sorting_station": [0.0, 900.0, 0.0, 0.0],      # 分拣中心
+            "maintenance_area": [0.0, -900.0, 0.0, 0.0],    # 维护站点
         }
         
         # ==================== 机器人控制参数 ====================
@@ -238,57 +247,88 @@ class OSGTCleanupSystemConfig:
         
         # ==================== OSGT资产文件映射 ====================
         self.ASSET_PATHS = {
-            # O类 - 障碍物配置 (通用环境障碍)
+            # O类 - 障碍物配置 (办公环境障碍物)
             "obstacles": {
+                "book_11": "My_asset/O/Book_11.usd",
+                "book_stack_01": "My_asset/O/BookStack_01.usd",
+                "book_stack_02": "My_asset/O/BookStack_02.usd",
                 "chair_b1": "My_asset/O/ChairB_1.usd",
                 "chair_b2": "My_asset/O/ChairB_2.usd",
                 "dining_table": "My_asset/O/DiningTable_grp.usd",
+                "encyclopedia": "My_asset/O/Encyclopedia01.usd",
                 "folding_table": "My_asset/O/FoldingTable_grp.usd",
                 "fridge_area": "My_asset/O/FridgeArea_grp.usd",
                 "iron_board": "My_asset/O/IronBoard_1.usd",
                 "kitchen_table": "My_asset/O/KitchenTable_1.usd",
-                "stool_metal": "My_asset/O/StoolMetalWire_1.usd",
+                "paper_bag_crumpled": "My_asset/O/PaperBagCrumpled_1.usd",
+                "stool_metal_wire": "My_asset/O/StoolMetalWire_1.usd",
                 "stool_wooden": "My_asset/O/StoolWooden_1.usd",
                 "stove_area": "My_asset/O/StoveArea_grp.usd",
             },
             
             # S类 - 可清扫物配置 (小颗粒吸附收集)
             "sweepable_items": {
-                "paper_crumpled": "My_asset/O/PaperBagCrumpled_1.usd",  # 临时使用O类中的纸质物品
-                "cheerio_small": "My_asset/G/assets/Cheerio/Cheerio.usd",  # 小颗粒物
-                "crayon_piece": "My_asset/G/assets/Crayon/Crayon.usd",    # 蜡笔碎片
-                "paper_small": "My_asset/G/assets/PaperSmall/PaperSmall.usd",  # 纸屑
-                "nail_small": "My_asset/G/assets/Nail/Nail.usd",          # 小钉子
+                "bubble_marble_02": "My_asset/S/BubbleMarble_02.usd",
+                "bubble_marble_03": "My_asset/S/BubbleMarble_03.usd",
+                "caster_bearing": "My_asset/S/caster_bearing.usd",
+                "cheerio_geom": "My_asset/S/Cheerio_geom.usd",
+                "d20_01": "My_asset/S/D20_01.usd",
+                "metalballs": "My_asset/S/Metalballs.usd",
+                "plasticballs": "My_asset/S/Plasticballs.usd",
+                "solid_marble_01": "My_asset/S/Solid_Marble_01.usd",
             },
             
-            # G类 - 可抓取物配置 (机械臂精确抓取)
+            # G类 - 可抓取物配置 (马克笔到小水瓶大小的物体)
             "graspable_items": {
-                "book": "My_asset/G/assets/Book/Book.usd",
-                "bottle": "My_asset/G/assets/Bottle/Bottle.usd",
-                "bowl": "My_asset/G/assets/Bowl/Bowl.usd",
-                "cup": "My_asset/G/assets/Cup/Cup.usd",
+                # 文具类 (马克笔大小)
+                "mechanical_pencil": "My_asset/G/Supplies/MechanicalPencil.usd",
+                "eraser": "My_asset/G/Supplies/Eraser.usd",
+                "makerpen": "My_asset/G/Makerpen.usd",
+                "crayon": "My_asset/G/assets/Crayon/Crayon.usd",
+                
+                # 餐具类 (中等大小)
                 "fork": "My_asset/G/assets/Fork/Fork.usd",
                 "knife": "My_asset/G/assets/Knife/Knife.usd",
                 "spoon": "My_asset/G/assets/Spoon/Spoon.usd",
-                "plate": "My_asset/G/assets/Plate/Plate.usd",
+                "wooden_spoon": "My_asset/G/assets/WoodenSpoon/WoodenSpoon.usd",
+                "spatula": "My_asset/G/assets/Spatula/Spatula.usd",
+                "whisk": "My_asset/G/assets/Whisk/Whisk.usd",
+                "rolling_pin": "My_asset/G/assets/RollingPin/RollingPin.usd",
+                
+                # 容器类 (小到中等大小)
+                "cup": "My_asset/G/assets/Cup/Cup.usd",
+                "jar": "My_asset/G/assets/Jar/Jar.usd",
                 "tin_can": "My_asset/G/Containers/TinCan.usd",
                 "mason_jar": "My_asset/G/Containers/MasonJar.usd",
-                "mechanical_pencil": "My_asset/G/Supplies/MechanicalPencil.usd",
-                "eraser": "My_asset/G/Supplies/Eraser.usd",
+                "oil_bottle": "My_asset/G/assets/OilBottle/OilBottle.usd",
+                "bottle": "My_asset/G/assets/Bottle/Bottle.usd",
+                "bottle_b": "My_asset/G/assets/BottleB/BottleB.usd",
+                "salt_shaker": "My_asset/G/assets/SaltShaker/SaltShaker.usd",
+                "spice_shaker": "My_asset/G/assets/SpiceShaker/SpiceShaker.usd",
+                "measuring_cup": "My_asset/G/assets/MeasuringCup/MeasuringCup.usd",
+                "measuring_spoon": "My_asset/G/assets/MeasuringSpoon/MeasuringSpoon.usd",
+                
+                # 小物件类
+                "ball": "My_asset/G/assets/Ball/Ball.usd",
+                "ball_walnut": "My_asset/G/Ball_Walnut_01.usd",
+                "clock": "My_asset/G/assets/Clock/Clock.usd",
+                "soap_dispenser": "My_asset/G/assets/SoapDispenser/SoapDispenser.usd",
+                "soap_sponge": "My_asset/G/assets/SoapSponge/SoapSponge.usd",
+                "hand_towel": "My_asset/G/assets/HandTowel/HandTowel.usd",
+                
+                # 书籍类
+                "book": "My_asset/G/assets/Book/Book.usd",
                 "sketchbook": "My_asset/G/Supplies/Sketchbook.usd",
-                "chess_pawn": "My_asset/G/Games/ChessSet/Chess_Pawn.usd",
-                "d20_die": "My_asset/G/Games/D20.usd",
-                "rubix_cube": "My_asset/G/Games/RubixCube.usd",
-                "book_stack": "My_asset/G/Books/BookStack_01.usd",
-                "encyclopedia": "My_asset/G/Books/Encyclopedia01.usd",
+                
+                # 小工具类
+                "nail": "My_asset/G/assets/Nail/Nail.usd",
+                "hook": "My_asset/G/assets/Hook/Hook.usd",
+                "hanger": "My_asset/G/assets/Hanger/Hanger.usd",
             },
             
-            # T类 - 任务区配置 (基础形状表示功能区)
+            # T类 - 任务区配置 (功能区域标识)
             "task_areas": {
-                "collection_zone_s": "My_asset/G/assets/FoldingTable/FoldingTable.usd",  # S类回收桌
-                "collection_zone_g": "My_asset/G/assets/KitchenTable/KitchenTable.usd", # G类存放桌
-                "sorting_station": "My_asset/G/assets/Chair/Chair.usd",                 # 分拣区域
-                "maintenance_area": "My_asset/G/assets/StoolWooden/StoolWooden.usd",    # 维护站点
+                "trash_can": "My_asset/T/trash_can.usd",
             }
         }
         
