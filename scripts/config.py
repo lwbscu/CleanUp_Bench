@@ -11,7 +11,7 @@ import os
 class OSGTCleanupSystemConfig:
     """OSGT标准清洁系统配置类（四类物体通用版）"""
 
-    def __init__(self, username=None, scenario_type="lobby"):
+    def __init__(self,username=None, scenario_type ="lobby"):
         # ==================== 用户配置 ====================
         if username is None:
             username = (
@@ -22,7 +22,7 @@ class OSGTCleanupSystemConfig:
             )
         
         self.USERNAME = username
-        self.SCENARIO_TYPE = scenario_type  # residential, school, hospital, factory
+        self.SCENARIO_TYPE = scenario_type  # residential, school, hospital
         print(f"🔧 配置用户: {self.USERNAME}")
         print(f"🏢 场景类型: {self.SCENARIO_TYPE}")
         
@@ -44,15 +44,74 @@ class OSGTCleanupSystemConfig:
             ]
         }
         
+        # 根据场景类型配置完整的背景场景参数
+        background_scene_mapping = {
+            "lobby": {
+                "usd_path": "My_asset/background/Lobby.usd",
+                "scale": 0.02,
+                "position": [-40, -50, 0.0],
+                "rotation_z": 0.0
+            },
+            "office": {
+                "usd_path": "My_asset/background/Office.usd",
+                "scale": 1,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "hospital": {
+                "usd_path": "My_asset/background/Hospital.usd",
+                "scale": 1,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "kitchen": {
+                "usd_path": "My_asset/background/Kitchen_set_instanced.usd",
+                "scale": 0.02,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "restaurant": {
+                "usd_path": "My_asset/background/Restaurant.usd",
+                "scale": 0.02,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 270.0
+            },
+            # 其他场景类型默认使用Lobby配置
+            "residential": {
+                "usd_path": "My_asset/background/Lobby.usd",
+                "scale": 0.02,
+                "position": [-40, -50, 0.0],
+                "rotation_z": 0.0
+            },
+            "school": {
+                "usd_path": "My_asset/background/Office.usd",
+                "scale": 0.025,
+                "position": [-35, -45, 0.0],
+                "rotation_z": 45.0
+            },
+            "factory": {
+                "usd_path": "My_asset/background/Office.usd",
+                "scale": 0.03,
+                "position": [-60, -70, 0.0],
+                "rotation_z": 0.0
+            }
+        }
+        
+        # 获取当前场景类型的完整配置，如果没有找到则使用lobby的默认配置
+        selected_background_config = background_scene_mapping.get(
+            self.SCENARIO_TYPE, 
+            background_scene_mapping["lobby"]
+        )
+        
         self.BACKGROUND_ENVIRONMENT = {
-            # 场景usd文件路径（相对Lobby库）
-            "usd_path": "My_asset/background/Lobby.usd",
-            # 缩放比例
-            "scale": 0.02,
-            # 位置 [x, y, z]
-            "position": [-40, -50, 0.0],
-            # 旋转（绕z轴，单位度）
-            "rotation_z": 0.0
+            # 场景usd文件路径（根据scenario_type自动选择）
+            "usd_path": selected_background_config["usd_path"],
+            # 缩放比例（根据场景优化）
+            "scale": selected_background_config["scale"],
+            # 位置 [x, y, z]（根据场景调整）
+            "position": selected_background_config["position"],
+            # 旋转（绕z轴，单位度）（根据场景方向优化）
+            "rotation_z": selected_background_config["rotation_z"]
         }
         # 自动检测资产路径
         self._detect_asset_paths()
@@ -553,6 +612,30 @@ class OSGTCleanupSystemConfig:
                 tolerance_graspable=1.6,
                 nav_timeout_sweepable=60
             )
+        elif scenario_type == "lobby":
+            self.update_navigation(
+                tolerance_sweepable=1.0,
+                tolerance_graspable=1.0,
+                nav_timeout_sweepable=45
+            )
+        elif scenario_type == "office":
+            self.update_navigation(
+                tolerance_sweepable=0.9,
+                tolerance_graspable=1.0,
+                nav_timeout_sweepable=40
+            )
+        elif scenario_type == "kitchen":
+            self.update_navigation(
+                tolerance_sweepable=0.7,
+                tolerance_graspable=0.8,
+                nav_timeout_sweepable=35
+            )
+        elif scenario_type == "restaurant":
+            self.update_navigation(
+                tolerance_sweepable=1.1,
+                tolerance_graspable=1.2,
+                nav_timeout_sweepable=50
+            )
     
     def print_summary(self):
         """打印OSGT配置摘要"""
@@ -569,6 +652,12 @@ class OSGTCleanupSystemConfig:
             print("📂 路径验证结果:")
             for key, status in self._path_validation_results.items():
                 print(f"   - {key}: {status}")
+        
+        print(f"🏠 背景场景配置:")
+        print(f"   - 文件路径: {self.BACKGROUND_ENVIRONMENT['usd_path']}")
+        print(f"   - 缩放比例: {self.BACKGROUND_ENVIRONMENT['scale']}")
+        print(f"   - 位置坐标: {self.BACKGROUND_ENVIRONMENT['position']}")
+        print(f"   - 旋转角度: {self.BACKGROUND_ENVIRONMENT['rotation_z']}°")
         
         print(f"📏 OSGT缩放配置:")
         for key, value in self.SCALE_CONFIG.items():

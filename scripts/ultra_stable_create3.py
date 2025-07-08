@@ -24,7 +24,8 @@ username = (
 print(f"🔧 启动OSGT四类物体清洁系统，用户: {username}")
 
 # 根据需要选择配置和场景类型
-config = OSGTCleanupSystemConfig(username, "hospital")         # 家庭住宅场景
+config = OSGTCleanupSystemConfig(username, "kitchen")    
+#在这里选择不同的场景
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
 COORDINATE_SCALE = 0.01  # 将几百的坐标缩放到几米的世界坐标
