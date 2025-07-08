@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OSGT LightBeam距离检测和避障系统
+OSGT LightBeam距离检测和避障系统 - 修复版
 附着在Create-3机械臂上的光束传感器，用于检测O类障碍物并执行三级避障
 """
 
@@ -13,6 +13,7 @@ from enum import Enum
 
 # Isaac Sim API
 import omni
+import omni.timeline
 from pxr import Gf, UsdPhysics, Sdf
 from isaacsim.core.utils.extensions import enable_extension
 import omni.graph.core as og
@@ -26,7 +27,7 @@ class OSGTAvoidanceLevel(Enum):
 
 
 class OSGTLightBeamSensorSystem:
-    """OSGT LightBeam光束传感器系统"""
+    """OSGT LightBeam光束传感器系统 - 修复版"""
     
     def __init__(self, config: Dict[str, Any], world, robot_prim_path: str):
         self.config = config
@@ -36,12 +37,16 @@ class OSGTLightBeamSensorSystem:
         # 从配置读取参数
         lightbeam_config = config.LIGHTBEAM_CONFIG
         self.sensor_configs = lightbeam_config["sensors"]
-        self.distance_thresholds = lightbeam_config["distance_thresholds"]
+        
+        # 获取当前物体类型的距离阈值
+        self.current_object_type = "environment"  # 默认环境类型
+        self.distance_thresholds = lightbeam_config["distance_thresholds"]["environment"]
         self.avoidance_params = lightbeam_config["avoidance_parameters"]
         self.visualization_enabled = lightbeam_config["enable_visualization"]
         
         # LightBeam传感器接口
         self.lightbeam_interface = None
+        self.timeline = None
         self.sensor_paths = []
         self.sensor_data = {}
         
@@ -49,6 +54,7 @@ class OSGTLightBeamSensorSystem:
         self.current_avoidance_level = OSGTAvoidanceLevel.SAFE
         self.obstacle_directions = []
         self.min_distance = float('inf')
+        self.raw_distances = []  # 新增：存储原始距离数据
         self.avoidance_velocity_modifier = (1.0, 1.0)  # (linear_factor, angular_factor)
         
         # 避障历史和平滑
@@ -62,10 +68,28 @@ class OSGTLightBeamSensorSystem:
             'caution_detections': 0,
             'danger_detections': 0,
             'avoidance_activations': 0,
-            'min_distance_recorded': float('inf')
+            'min_distance_recorded': float('inf'),
+            'data_read_failures': 0,
+            'successful_reads': 0
         }
         
         print(f"🔦 OSGT LightBeam系统初始化: {len(self.sensor_configs)}个传感器")
+    
+    def set_object_type_context(self, object_type: str):
+        """设置当前处理的物体类型，调整距离阈值"""
+        self.current_object_type = object_type
+        
+        lightbeam_config = self.config.LIGHTBEAM_CONFIG
+        if object_type in ["sweepable", "graspable", "task_areas"]:
+            # S/G/T类物体使用精确距离阈值
+            self.distance_thresholds = lightbeam_config["distance_thresholds"]["sgt_objects"]
+            if self.config.DEBUG["show_lightbeam_status"]:
+                print(f"🎯 LightBeam切换到S/G/T物体模式: {object_type}")
+        else:
+            # 环境/O类障碍物使用环境距离阈值
+            self.distance_thresholds = lightbeam_config["distance_thresholds"]["environment"]
+            if self.config.DEBUG["show_lightbeam_status"]:
+                print(f"🏠 LightBeam切换到环境/障碍物模式: {object_type}")
     
     def initialize_sensors(self) -> bool:
         """初始化所有LightBeam传感器"""
@@ -75,9 +99,16 @@ class OSGTLightBeamSensorSystem:
             # 启用PhysX传感器扩展
             enable_extension("isaacsim.sensors.physx")
             
-            # 获取LightBeam接口
+            # 获取timeline接口
+            self.timeline = omni.timeline.get_timeline_interface()
+            
+            # 获取LightBeam接口（使用正确的方法）
             from isaacsim.sensors.physx import _range_sensor
             self.lightbeam_interface = _range_sensor.acquire_lightbeam_sensor_interface()
+            
+            if self.lightbeam_interface is None:
+                print("❌ 无法获取LightBeam传感器接口")
+                return False
             
             # 确保物理场景存在
             stage = self.world.stage
@@ -87,7 +118,7 @@ class OSGTLightBeamSensorSystem:
             
             # 为每个配置创建传感器
             for i, sensor_config in enumerate(self.sensor_configs):
-                sensor_path = f"/LightBeam_Sensor_{i}"
+                sensor_path = f"/World/LightBeam_Sensor_{i}"  # 修正路径
                 success = self._create_lightbeam_sensor(sensor_path, sensor_config)
                 
                 if success:
@@ -97,7 +128,7 @@ class OSGTLightBeamSensorSystem:
                         'last_detection': None,
                         'status': 'active'
                     }
-                    print(f"   ✅ 传感器 {i}: {sensor_config['name']} 创建成功")
+                    print(f"   ✅ 传感器 {i}: {sensor_config['name']} -> {sensor_path}")
                 else:
                     print(f"   ❌ 传感器 {i}: {sensor_config['name']} 创建失败")
                     return False
@@ -118,15 +149,12 @@ class OSGTLightBeamSensorSystem:
     def _create_lightbeam_sensor(self, sensor_path: str, sensor_config: Dict) -> bool:
         """创建单个LightBeam传感器"""
         try:
-            # 计算传感器在机器人坐标系中的位置
-            robot_position = self._get_robot_position()
-            
             # 传感器相对位置（从配置读取）
             relative_pos = sensor_config.get("relative_position", [0.0, 0.0, 0.5])
             relative_rot = sensor_config.get("relative_rotation", [0.0, 0.0, 0.0])
             
-            # 计算世界坐标位置
-            sensor_position = robot_position + np.array(relative_pos)
+            # 初始位置（相对于世界原点）
+            sensor_position = np.array(relative_pos)
             
             # 创建传感器方向四元数
             orientation_quat = self._euler_to_quaternion(relative_rot)
@@ -167,26 +195,30 @@ class OSGTLightBeamSensorSystem:
             for i, sensor_path in enumerate(self.sensor_paths):
                 graph_path = f"/ActionGraph_LightBeam_{i}"
                 
-                (action_graph, new_nodes, _, _) = og.Controller.edit(
-                    {"graph_path": graph_path, "evaluator_name": "execution"},
-                    {
-                        og.Controller.Keys.CREATE_NODES: [
-                            ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                            ("IsaacReadLightBeam", "isaacsim.sensors.physx.IsaacReadLightBeam"),
-                            ("DebugDrawRayCast", "isaacsim.util.debug_draw.DebugDrawRayCast"),
-                        ],
-                        og.Controller.Keys.SET_VALUES: [
-                            ("IsaacReadLightBeam.inputs:lightbeamPrim", sensor_path),
-                        ],
-                        og.Controller.Keys.CONNECT: [
-                            ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam.inputs:execIn"),
-                            ("IsaacReadLightBeam.outputs:execOut", "DebugDrawRayCast.inputs:exec"),
-                            ("IsaacReadLightBeam.outputs:beamOrigins", "DebugDrawRayCast.inputs:beamOrigins"),
-                            ("IsaacReadLightBeam.outputs:beamEndPoints", "DebugDrawRayCast.inputs:beamEndPoints"),
-                            ("IsaacReadLightBeam.outputs:numRays", "DebugDrawRayCast.inputs:numRays"),
-                        ],
-                    },
-                )
+                try:
+                    (action_graph, new_nodes, _, _) = og.Controller.edit(
+                        {"graph_path": graph_path, "evaluator_name": "execution"},
+                        {
+                            og.Controller.Keys.CREATE_NODES: [
+                                ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+                                ("IsaacReadLightBeam", "isaacsim.sensors.physx.IsaacReadLightBeam"),
+                                ("DebugDrawRayCast", "isaacsim.util.debug_draw.DebugDrawRayCast"),
+                            ],
+                            og.Controller.Keys.SET_VALUES: [
+                                ("IsaacReadLightBeam.inputs:lightbeamPrim", sensor_path),
+                            ],
+                            og.Controller.Keys.CONNECT: [
+                                ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam.inputs:execIn"),
+                                ("IsaacReadLightBeam.outputs:execOut", "DebugDrawRayCast.inputs:exec"),
+                                ("IsaacReadLightBeam.outputs:beamOrigins", "DebugDrawRayCast.inputs:beamOrigins"),
+                                ("IsaacReadLightBeam.outputs:beamEndPoints", "DebugDrawRayCast.inputs:beamEndPoints"),
+                                ("IsaacReadLightBeam.outputs:numRays", "DebugDrawRayCast.inputs:numRays"),
+                            ],
+                        },
+                    )
+                    print(f"   ✅ 传感器 {i} 可视化设置完成")
+                except Exception as e:
+                    print(f"   ⚠️ 传感器 {i} 可视化设置失败: {e}")
             
             print("✅ LightBeam可视化设置完成")
             return True
@@ -241,67 +273,117 @@ class OSGTLightBeamSensorSystem:
                 print(f"更新传感器位置失败: {e}")
     
     def get_distance_measurements(self) -> Dict[str, Any]:
-        """获取所有传感器的距离测量数据"""
+        """获取所有传感器的距离测量数据 - 修复版"""
         measurements = {
             'min_distance': float('inf'),
+            'raw_distances': [],
             'sensor_data': {},
             'obstacle_detected': False,
             'avoidance_level': OSGTAvoidanceLevel.SAFE,
-            'obstacle_directions': []
+            'obstacle_directions': [],
+            'data_valid': False
         }
         
         try:
-            timeline = omni.timeline.get_timeline_interface()
-            if not timeline.is_playing():
+            # 确保仿真正在运行
+            if not self.timeline or not self.timeline.is_playing():
+                if self.config.DEBUG["show_lightbeam_status"]:
+                    print("📡 LightBeam: 仿真未运行")
+                return measurements
+            
+            if not self.lightbeam_interface:
+                print("❌ LightBeam接口未初始化")
                 return measurements
             
             all_distances = []
+            raw_distances = []
             obstacle_directions = []
+            valid_data_count = 0
             
             for sensor_path in self.sensor_paths:
                 sensor_config = self.sensor_data[sensor_path]['config']
                 
-                # 获取传感器数据
-                linear_depth = self.lightbeam_interface.get_linear_depth_data(sensor_path)
-                beam_hit = self.lightbeam_interface.get_beam_hit_data(sensor_path)
-                hit_pos = self.lightbeam_interface.get_hit_pos_data(sensor_path)
-                
-                if linear_depth is not None and len(linear_depth) > 0:
-                    valid_distances = []
+                try:
+                    # 获取传感器数据（使用正确的方法）
+                    linear_depth = self.lightbeam_interface.get_linear_depth_data(sensor_path)
+                    beam_hit = self.lightbeam_interface.get_beam_hit_data(sensor_path)
+                    hit_pos = self.lightbeam_interface.get_hit_pos_data(sensor_path)
                     
-                    for i in range(len(linear_depth)):
-                        if beam_hit[i] and 0.1 < linear_depth[i] < 10.0:
-                            distance = linear_depth[i]
-                            valid_distances.append(distance)
-                            all_distances.append(distance)
+                    if linear_depth is not None and beam_hit is not None:
+                        # 转换为numpy数组并确保类型正确
+                        linear_depth = np.array(linear_depth)
+                        beam_hit = np.array(beam_hit).astype(bool)
+                        
+                        if len(linear_depth) > 0 and len(beam_hit) > 0:
+                            valid_distances = []
                             
-                            # 计算障碍物方向
-                            if hit_pos is not None and len(hit_pos) > i:
-                                hit_position = hit_pos[i]
-                                robot_pos = self._get_robot_position()
+                            for i in range(min(len(linear_depth), len(beam_hit))):
+                                distance = linear_depth[i]
+                                hit = beam_hit[i]
                                 
-                                direction = np.array([hit_position[0] - robot_pos[0], 
-                                                    hit_position[1] - robot_pos[1]])
-                                if np.linalg.norm(direction) > 0:
-                                    direction = direction / np.linalg.norm(direction)
-                                    obstacle_directions.append(direction)
-                    
-                    # 记录传感器数据
-                    if valid_distances:
-                        measurements['sensor_data'][sensor_path] = {
-                            'name': sensor_config['name'],
-                            'min_distance': min(valid_distances),
-                            'distances': valid_distances,
-                            'num_hits': len(valid_distances)
-                        }
+                                # 记录所有原始距离数据
+                                raw_distances.append({
+                                    'sensor': sensor_config['name'],
+                                    'beam': i,
+                                    'distance': distance,
+                                    'hit': hit
+                                })
+                                
+                                if hit and 0.1 < distance < 100.0:  # 扩大有效范围
+                                    valid_distances.append(distance)
+                                    all_distances.append(distance)
+                                    valid_data_count += 1
+                                    
+                                    # 计算障碍物方向
+                                    if hit_pos is not None and len(hit_pos) > i:
+                                        try:
+                                            hit_position = hit_pos[i]
+                                            robot_pos = self._get_robot_position()
+                                            
+                                            direction = np.array([hit_position[0] - robot_pos[0], 
+                                                                hit_position[1] - robot_pos[1]])
+                                            if np.linalg.norm(direction) > 0:
+                                                direction = direction / np.linalg.norm(direction)
+                                                obstacle_directions.append(direction)
+                                        except:
+                                            pass
+                            
+                            # 记录传感器数据
+                            if valid_distances:
+                                measurements['sensor_data'][sensor_path] = {
+                                    'name': sensor_config['name'],
+                                    'min_distance': min(valid_distances),
+                                    'distances': valid_distances,
+                                    'num_hits': len(valid_distances)
+                                }
+                            
+                            self.detection_stats['successful_reads'] += 1
+                            
+                        else:
+                            if self.config.DEBUG["show_lightbeam_status"]:
+                                print(f"   {sensor_config['name']}: 空数据")
+                    else:
+                        self.detection_stats['data_read_failures'] += 1
+                        if self.config.DEBUG["show_lightbeam_status"]:
+                            print(f"   {sensor_config['name']}: 数据读取失败")
+                            
+                except Exception as e:
+                    self.detection_stats['data_read_failures'] += 1
+                    if self.config.DEBUG["show_lightbeam_status"]:
+                        print(f"   {sensor_config['name']}: 异常 - {e}")
+            
+            # 设置原始距离数据
+            measurements['raw_distances'] = raw_distances
+            self.raw_distances = raw_distances
             
             # 计算整体最小距离
             if all_distances:
                 measurements['min_distance'] = min(all_distances)
                 measurements['obstacle_detected'] = True
                 measurements['obstacle_directions'] = obstacle_directions
+                measurements['data_valid'] = True
                 
-                # 确定避障级别
+                # 确定避障级别（使用当前物体类型的阈值）
                 min_dist = measurements['min_distance']
                 if min_dist <= self.distance_thresholds['danger']:
                     measurements['avoidance_level'] = OSGTAvoidanceLevel.DANGER
@@ -312,10 +394,14 @@ class OSGTLightBeamSensorSystem:
                 
                 # 更新统计
                 self._update_detection_stats(measurements['avoidance_level'], min_dist)
+            else:
+                # 没有检测到有效距离
+                measurements['data_valid'] = valid_data_count > 0
             
             return measurements
             
         except Exception as e:
+            self.detection_stats['data_read_failures'] += 1
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"获取距离测量失败: {e}")
             return measurements
@@ -326,7 +412,7 @@ class OSGTLightBeamSensorSystem:
             # 获取最新的距离测量
             measurements = self.get_distance_measurements()
             
-            if not measurements['obstacle_detected']:
+            if not measurements['obstacle_detected'] or not measurements['data_valid']:
                 self.current_avoidance_level = OSGTAvoidanceLevel.SAFE
                 return desired_linear_vel, desired_angular_vel
             
@@ -475,10 +561,25 @@ class OSGTLightBeamSensorSystem:
         """打印检测状态"""
         measurements = self.get_distance_measurements()
         
-        print(f"\n📡 OSGT LightBeam检测状态:")
+        print(f"\n📡 OSGT LightBeam检测状态 ({self.current_object_type}模式):")
         print(f"   最小距离: {measurements['min_distance']:.3f}m")
         print(f"   避障级别: {measurements['avoidance_level'].value}")
         print(f"   障碍物检测: {'是' if measurements['obstacle_detected'] else '否'}")
+        print(f"   数据有效: {'是' if measurements['data_valid'] else '否'}")
+        
+        # 显示当前阈值
+        print(f"   当前阈值: 安全>{self.distance_thresholds['safe']:.1f}m, "
+              f"谨慎>{self.distance_thresholds['caution']:.1f}m, "
+              f"危险>{self.distance_thresholds['danger']:.1f}m")
+        
+        # 显示原始距离数据
+        if measurements['raw_distances']:
+            print(f"   原始距离数据:")
+            for data in measurements['raw_distances'][:16]:  # 只显示前10个
+                status = "命中" if data['hit'] else "未命中"
+                print(f"     {data['sensor']}-光束{data['beam']}: {data['distance']:.3f}m ({status})")
+            if len(measurements['raw_distances']) > 16:
+                print(f"     ... 还有{len(measurements['raw_distances'])-16}个数据点")
         
         if measurements['sensor_data']:
             print(f"   传感器详情:")
@@ -489,15 +590,20 @@ class OSGTLightBeamSensorSystem:
         """打印检测统计"""
         stats = self.detection_stats
         total = stats['total_detections']
+        total_reads = stats['successful_reads'] + stats['data_read_failures']
         
+        print(f"\n📊 OSGT LightBeam统计:")
         if total > 0:
-            print(f"\n📊 OSGT LightBeam统计:")
             print(f"   总检测次数: {total}")
             print(f"   安全检测: {stats['safe_detections']} ({stats['safe_detections']/total*100:.1f}%)")
             print(f"   谨慎检测: {stats['caution_detections']} ({stats['caution_detections']/total*100:.1f}%)")
             print(f"   危险检测: {stats['danger_detections']} ({stats['danger_detections']/total*100:.1f}%)")
             print(f"   避障激活: {stats['avoidance_activations']}")
             print(f"   最近距离: {stats['min_distance_recorded']:.3f}m")
+        
+        if total_reads > 0:
+            success_rate = stats['successful_reads'] / total_reads * 100
+            print(f"   数据读取成功率: {success_rate:.1f}% ({stats['successful_reads']}/{total_reads})")
     
     def _get_robot_position(self) -> np.ndarray:
         """获取机器人位置"""
@@ -541,7 +647,9 @@ class OSGTLightBeamSensorSystem:
             'caution_detections': 0,
             'danger_detections': 0,
             'avoidance_activations': 0,
-            'min_distance_recorded': float('inf')
+            'min_distance_recorded': float('inf'),
+            'data_read_failures': 0,
+            'successful_reads': 0
         }
         self.avoidance_history.clear()
         self.last_avoidance_command = (0.0, 0.0)

@@ -1085,6 +1085,10 @@ class OSGTCreate3CleanupSystem:
     
     def smart_navigate_to_target(self, target_pos, osgt_type="sweepable", max_time=None, tolerance=None):
         """OSGT智能导航（根据物体类型调整参数+LightBeam避障）"""
+        # 设置LightBeam物体类型上下文
+        if self.lightbeam_enabled and self.lightbeam_system:
+            self.lightbeam_system.set_object_type_context(osgt_type)
+        
         # 使用OSGT配置的默认值
         if max_time is None:
             if osgt_type == "sweepable":
@@ -1141,6 +1145,10 @@ class OSGTCreate3CleanupSystem:
             import traceback
             traceback.print_exc()
             return False
+        finally:
+            # 导航完成后重置为环境模式
+            if self.lightbeam_enabled and self.lightbeam_system:
+                self.lightbeam_system.set_object_type_context("environment")
     
     # ==================== OSGT四类物体处理方法 ====================
     
@@ -1193,7 +1201,7 @@ class OSGTCreate3CleanupSystem:
             if self.config.DEBUG["show_navigation_progress"]:
                 print(f"   目标位置: [{target_position[0]:.3f}, {target_position[1]:.3f}]")
             
-            # 使用OSGT导航参数
+            # 使用OSGT导航参数并设置S类物体类型
             nav_success = self.smart_navigate_to_target(
                 target_position, 
                 osgt_type="sweepable"
@@ -1232,7 +1240,7 @@ class OSGTCreate3CleanupSystem:
             if self.config.DEBUG["show_navigation_progress"]:
                 print(f"   目标位置: [{target_position[0]:.3f}, {target_position[1]:.3f}]")
             
-            # 使用OSGT导航参数
+            # 使用OSGT导航参数并设置G类物体类型
             nav_success = self.smart_navigate_to_target(
                 target_position, 
                 osgt_type="graspable"
@@ -1273,7 +1281,7 @@ class OSGTCreate3CleanupSystem:
             if self.config.DEBUG["show_navigation_progress"]:
                 print(f"   目标位置: [{target_position[0]:.3f}, {target_position[1]:.3f}]")
             
-            # 使用OSGT导航参数
+            # 使用OSGT导航参数并设置T类物体类型
             nav_success = self.smart_navigate_to_target(
                 target_position, 
                 osgt_type="task_areas"
@@ -1317,9 +1325,14 @@ class OSGTCreate3CleanupSystem:
             print(f"🔦 LightBeam避障系统: 启用")
             lightbeam_config = self.config.LIGHTBEAM_CONFIG
             print(f"   传感器数量: {len(lightbeam_config['sensors'])}")
-            print(f"   距离阈值: 安全={lightbeam_config['distance_thresholds']['safe']}m, "
-                  f"谨慎={lightbeam_config['distance_thresholds']['caution']}m, "
-                  f"危险={lightbeam_config['distance_thresholds']['danger']}m")
+            env_thresholds = lightbeam_config['distance_thresholds']['environment']
+            sgt_thresholds = lightbeam_config['distance_thresholds']['sgt_objects']
+            print(f"   环境阈值: 安全={env_thresholds['safe']}m, "
+                  f"谨慎={env_thresholds['caution']}m, "
+                  f"危险={env_thresholds['danger']}m")
+            print(f"   物体阈值: 安全={sgt_thresholds['safe']}m, "
+                  f"谨慎={sgt_thresholds['caution']}m, "
+                  f"危险={sgt_thresholds['danger']}m")
         else:
             print(f"🔦 LightBeam避障系统: 禁用")
         

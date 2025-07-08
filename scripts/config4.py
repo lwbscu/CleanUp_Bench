@@ -3,14 +3,13 @@
 OSGT四类物体标准室内清洁系统配置文件（通用版）
 O类-障碍物 | S类-可清扫物 | G类-可抓取物 | T类-任务区
 适配场景：家庭住宅、学校、医院、工厂等
-增加LightBeam光束传感器避障配置
 """
 
 import numpy as np
 import os
 
 class OSGTCleanupSystemConfig:
-    """OSGT标准清洁系统配置类（四类物体通用版+LightBeam避障）"""
+    """OSGT标准清洁系统配置类（四类物体通用版）"""
 
     def __init__(self, username=None, scenario_type="residential"):
         # ==================== 用户配置 ====================
@@ -47,9 +46,9 @@ class OSGTCleanupSystemConfig:
         
         self.BACKGROUND_ENVIRONMENT = {
             # 场景usd文件路径（相对住宅资产库）
-            #"usd_path": "Kitchen_set/Kitchen_set_instanced.usd",
+            "usd_path": "My_asset/background/IsaacWarehouse.usd",
             # 缩放比例
-            "scale": 0.02,
+            "scale": 0.01,
             # 位置 [x, y, z]
             "position": [0.0, 0.0, 0.0],
             # 旋转（绕z轴，单位度）
@@ -62,7 +61,7 @@ class OSGTCleanupSystemConfig:
         self.PATHS = {
             "residential_assets_root": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "NVIDIA/Assets/ArchVis/Residential"
+                "NVIDIA/Assets/ArchVis/Industrial"
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
@@ -73,143 +72,6 @@ class OSGTCleanupSystemConfig:
         
         # 验证路径有效性
         self._validate_paths()
-        
-        # ==================== LIGHTBEAM传感器配置 ====================
-        self.LIGHTBEAM_CONFIG = {
-            # 是否启用LightBeam避障系统
-            "enable_lightbeam": True,
-            
-            # 是否启用可视化
-            "enable_visualization": True,
-            
-            # 距离阈值配置 (米) - 重新分类
-            "distance_thresholds": {
-            # 环境/O类障碍物距离阈值（更大的安全距离）
-            "environment": {
-                "safe": 5.0,        # 环境安全距离
-                "caution": 3.0,     # 环境谨慎距离
-                "danger": 1.5       # 环境危险距离
-            },
-            # S/G/T类物体距离阈值（更小的精确距离）
-            "sgt_objects": {
-                "safe": 2.0,        # 物体安全距离
-                "caution": 1.2,     # 物体谨慎距离 
-                "danger": 0.5       # 物体危险距离
-            }
-            },
-            
-            # 传感器配置列表
-            "sensors": [
-            # 底部高度 (-0.5) 传感器 - 4个方向
-            {
-                "name": "front_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部前方
-                "relative_rotation": [0.0, 0.0, 0.0],    # 朝向前方
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [1, 0, 0]
-            },
-            {
-                "name": "back_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部后方
-                "relative_rotation": [0.0, 0.0, 3.14],   # 朝向后方 (180度)
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [-1, 0, 0]
-            },
-            {
-                "name": "left_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部左侧
-                "relative_rotation": [0.0, 0.0, 1.57],   # 朝向左侧 (90度)
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, 1, 0]
-            },
-            {
-                "name": "right_bottom",
-                "relative_position": [0, 0, -0.5],       # 底部右侧
-                "relative_rotation": [0.0, 0.0, -1.57],  # 朝向右侧 (-90度)
-                "min_range": 0.6,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, -1, 0]
-            },
-            # 顶部高度 (0.4) 传感器 - 4个方向
-            {
-                "name": "front_top",
-                "relative_position": [0, 0, 0.1],        # 顶部前方
-                "relative_rotation": [0.0, 0.0, 0.0],    # 朝向前方
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [1, 0, 0]
-            },
-            {
-                "name": "back_top",
-                "relative_position": [0, 0, 0.1],        # 顶部后方
-                "relative_rotation": [0.0, 0.0, 3.14],   # 朝向后方 (180度)
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [-1, 0, 0]
-            },
-            {
-                "name": "left_top",
-                "relative_position": [0, 0, 0.1],        # 顶部左侧
-                "relative_rotation": [0.0, 0.0, 1.57],   # 朝向左侧 (90度)
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, 1, 0]
-            },
-            {
-                "name": "right_top",
-                "relative_position": [0, 0, 0.1],        # 顶部右侧
-                "relative_rotation": [0.0, 0.0, -1.57],  # 朝向右侧 (-90度)
-                "min_range": 0.1,
-                "max_range": 6.0,
-                "num_rays": 2,
-                "curtain_length": 0.05,
-                "forward_axis": [0, -1, 0]
-            }
-            ],
-            
-            # 避障参数配置
-            "avoidance_parameters": {
-            "caution": {
-                "speed_reduction_factor": 0.4,    # 速度减少40%
-                "avoidance_strength": 0.8,        # 避障转向强度
-                "angular_response": 0.6,          # 原始角速度保留60%
-                "smoothing_factor": 0.3           # 平滑因子
-            },
-            "danger": {
-                "emergency_speed_factor": 0.2,    # 紧急情况下速度减至20%
-                "emergency_turn_rate": 2.5,       # 紧急转向速率 (rad/s)
-                "angular_override": 0.2,          # 原始角速度只保留20%
-                "max_speed_limit": 0.6,           # 最大速度限制因子
-                "max_angular_limit": 0.8,         # 最大角速度限制因子
-                "smoothing_factor": 0.1           # 较少平滑，响应更快
-            }
-            },
-            
-            # 检测和报告配置
-            "detection_settings": {
-            "detection_frequency": 30,           # 检测频率 (Hz)
-            "report_interval": 2.0,              # 状态报告间隔 (秒)
-            "enable_terminal_output": True,      # 启用终端输出
-            "verbose_detection": True            # 详细检测信息
-            }
-        }
         
         # ==================== OSGT四类物体缩放配置 ====================
         self.SCALE_CONFIG = {
@@ -235,41 +97,24 @@ class OSGTCleanupSystemConfig:
         self.OBSTACLES_POSITIONS = {
             # 格式: "障碍物名": [x, y, z, rotation_z_degrees]
             # 适配多场景：家庭(桌椅)、学校(课桌)、医院(病床)、工厂(设备)
-            "obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
-            "obstacle_2": [130.0, 50.0, 0.0, 0.0],      # 座椅/推车
-            "obstacle_3": [-200.0, 180.0, 0.0, 0.0],    # 中央设施
-            "obstacle_4": [350.0, -280.0, 0.0, 45.0],   # 边角设备
-            "obstacle_5": [-450.0, -150.0, 0.0, 90.0],  # 存储设施
-            "obstacle_6": [-380.0, -420.0, 0.0, 0.0],   # 大型设备/书架
+            #"obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
+            
         }
         
         # S类 - 可清扫物位置配置 (Sweepable Items)
         self.SWEEPABLE_POSITIONS = {
             # 格式: "可清扫物名": [x, y, z]
             # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
-            "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
-            "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
-            "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
-            "sweepable_4": [-680.0, 120.0, 0.015],      # 清洁盲区
-            "sweepable_5": [750.0, 80.0, 0.015],        # 设备下方
-            "sweepable_6": [-420.0, 650.0, 0.03],       # 通道区域
-            "sweepable_7": [320.0, -580.0, 0.03],       # 边缘区域
+            #"sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
+            
         }
         
         # G类 - 可抓取物位置配置 (Graspable Items)
         self.GRASPABLE_POSITIONS = {
             # 格式: "可抓取物名": [x, y, z]
             # 工具、容器、书籍、零件等需要机械臂抓取的物体
-            "graspable_1": [240.0, 360.0, 0.05],        # 容器类
-            "graspable_2": [-325.0, -240.0, 0.05],      # 工具类
-            "graspable_3": [190.0, -375.0, 0.05],       # 文具类
-            "graspable_4": [425.0, 190.0, 0.05],        # 零件类
-            "graspable_5": [-110.0, 440.0, 0.05],       # 设备类
-            # 书籍等特殊可抓取物
-            "graspable_book_1": [0, -390.0, 0.8],  # 散落书本
-            "graspable_book_3": [-330.0, -370.0, 0.8],  # 桌面书籍
-            "graspable_book_2": [-350.0, -410.0, 0.8],  # 文档资料
-            "spoon_1": [100.0, -300.0, 0.08],  # 勺子
+            #"graspable_1": [240.0, 360.0, 0.05],        # 容器类
+           
         }
         
         # T类 - 任务区位置配置 (Task Areas)
@@ -382,45 +227,28 @@ class OSGTCleanupSystemConfig:
         self.ASSET_PATHS = {
             # O类 - 障碍物配置 (通用环境障碍)
             "obstacles": {
-                "obstacle_1": "Furniture/Desks/Desk_01.usd",          # 桌面/工作台
-                "obstacle_2": "Furniture/Chairs/Chair_Desk.usd",      # 座椅/推车
-                "obstacle_3": "Furniture/CoffeeTables/Midtown.usd",   # 中央设施
-                "obstacle_4": "Furniture/EndTables/Festus01.usd",     # 边角设备
-                "obstacle_5": "Furniture/SofaTables/Ellisville.usd",  # 存储设施
-                "obstacle_6": "Furniture/Bookshelves/Fenton.usd",     # 大型设备
+                #"obstacle_1": "Furniture/Desks/Desk_01.usd",          # 桌面/工作台
+                
             },
             
             # S类 - 可清扫物配置 (小颗粒吸附收集)
             "sweepable_items": {
-                "sweepable_1": "Decor/Tchotchkes/Orange_01.usd",      # 有机碎渣
-                "sweepable_2": "Decor/Tchotchkes/Orange_02.usd",      # 食物残渣
-                "sweepable_3": "Decor/Tchotchkes/Lemon_01.usd",       # 小型碎片
-                "sweepable_4": "Decor/Tchotchkes/Lemon_02.usd",       # 细小颗粒
-                "sweepable_5": "Decor/Coasters/Coaster_Hexagon.usd",  # 薄片物
-                "sweepable_6": "Misc/Supplies/Eraser.usd",            # 橡胶碎片
-                "sweepable_7": "Entertainment/Games/Solid_Marble.usd", # 滚珠颗粒
+                #"sweepable_1": "Decor/Tchotchkes/Orange_01.usd",      # 有机碎渣
+                
             },
             
             # G类 - 可抓取物配置 (机械臂精确抓取)
             "graspable_items": {
-                "graspable_1": "Food/Containers/TinCan.usd",          # 容器类
-                "graspable_2": "Food/Containers/MasonJar.usd",        # 瓶罐类
-                "graspable_3": "Misc/Supplies/MechanicalPencil.usd",  # 工具类
-                "graspable_4": "Entertainment/Games/DiceSet/D6.usd",   # 小型零件
-                "graspable_5": "Entertainment/Games/DiceSet/D20.usd",  # 精密器件
-                # 书籍文档类
-                "graspable_book_1": "Decor/Books/Book_01.usd",
-                "graspable_book_2": "Decor/Books/Book_02.usd", 
-                "graspable_book_3": "Decor/Books/Book_11.usd",
-                "spoon_1": "Kitchen_set/assets/Spoon/Spoon.geom.usd",  # 勺子
+                #"graspable_1": "Food/Containers/TinCan.usd",          # 容器类
+                
             },
             
             # T类 - 任务区配置 (基础形状表示功能区)
             "task_areas": {
-                "collection_zone_s": "Furniture/Desks/Desk_01.usd",   # S类回收台
-                "collection_zone_g": "Furniture/Desks/Desk_01.usd",   # G类存放台
-                "sorting_area": "Furniture/CoffeeTables/Midtown.usd",  # 分拣中心
-                "maintenance_station": "Furniture/EndTables/Festus01.usd", # 维护站点
+                #"collection_zone_s": "Furniture/Desks/Desk_01.usd",   # S类回收台
+                #"collection_zone_g": "Furniture/Desks/Desk_01.usd",   # G类存放台
+                #"sorting_area": "Furniture/CoffeeTables/Midtown.usd",  # 分拣中心
+                #"maintenance_station": "Furniture/EndTables/Festus01.usd", # 维护站点
             }
         }
         
@@ -436,7 +264,6 @@ class OSGTCleanupSystemConfig:
             "show_robot_state": True,
             "show_navigation_progress": True,
             "show_grasp_details": True,
-            "show_lightbeam_status": True,        # 显示LightBeam状态
             "progress_report_interval": 2.5,
         }
         
@@ -654,50 +481,6 @@ class OSGTCleanupSystemConfig:
                 nav_timeout_sweepable=60
             )
     
-    # ==================== LightBeam配置方法 ====================
-    
-    def update_lightbeam_config(self, **kwargs):
-        """更新LightBeam配置"""
-        for key, value in kwargs.items():
-            if key in self.LIGHTBEAM_CONFIG:
-                self.LIGHTBEAM_CONFIG[key] = value
-                print(f"🔦 LightBeam参数更新: {key} = {value}")
-    
-    def add_lightbeam_sensor(self, name, relative_position, relative_rotation, 
-                           min_range=0.1, max_range=5.0, num_rays=5):
-        """添加新的LightBeam传感器配置"""
-        new_sensor = {
-            "name": name,
-            "relative_position": relative_position,
-            "relative_rotation": relative_rotation,
-            "min_range": min_range,
-            "max_range": max_range,
-            "num_rays": num_rays,
-            "curtain_length": 0.5,
-            "forward_axis": [1, 0, 0]
-        }
-        self.LIGHTBEAM_CONFIG["sensors"].append(new_sensor)
-        print(f"🔦 添加LightBeam传感器: {name} -> {relative_position}")
-    
-    def set_lightbeam_thresholds(self, object_type="environment", safe=None, caution=None, danger=None):
-        """设置LightBeam距离阈值"""
-        if object_type not in ["environment", "sgt_objects"]:
-            print(f"❌ 无效的物体类型: {object_type}")
-            return
-            
-        thresholds = self.LIGHTBEAM_CONFIG["distance_thresholds"][object_type]
-        
-        if safe is not None:
-            thresholds["safe"] = safe
-        if caution is not None:
-            thresholds["caution"] = caution
-        if danger is not None:
-            thresholds["danger"] = danger
-        
-        print(f"🔦 LightBeam {object_type} 阈值更新: 安全={thresholds['safe']}m, "
-              f"谨慎={thresholds['caution']}m, "
-              f"危险={thresholds['danger']}m")
-    
     def print_summary(self):
         """打印OSGT配置摘要"""
         print("\n" + "="*70)
@@ -727,16 +510,5 @@ class OSGTCleanupSystemConfig:
         print(f"🌀 最大角速度: {self.ROBOT_CONTROL['max_angular_velocity']} rad/s")
         print(f"🎯 OSGT导航容差: S类 {self.NAVIGATION['tolerance_sweepable']}m, G类 {self.NAVIGATION['tolerance_graspable']}m")
         print(f"⏱️ OSGT导航超时: S类 {self.NAVIGATION['nav_timeout_sweepable']}s, G类 {self.NAVIGATION['nav_timeout_graspable']}s")
-        
-        # LightBeam配置摘要
-        if hasattr(self, 'LIGHTBEAM_CONFIG'):
-            print(f"🔦 LightBeam避障系统: {'启用' if self.LIGHTBEAM_CONFIG['enable_lightbeam'] else '禁用'}")
-            print(f"   传感器数量: {len(self.LIGHTBEAM_CONFIG['sensors'])}")
-            print(f"   环境距离阈值: 安全={self.LIGHTBEAM_CONFIG['distance_thresholds']['environment']['safe']}m, "
-                  f"谨慎={self.LIGHTBEAM_CONFIG['distance_thresholds']['environment']['caution']}m, "
-                  f"危险={self.LIGHTBEAM_CONFIG['distance_thresholds']['environment']['danger']}m")
-            print(f"   物体距离阈值: 安全={self.LIGHTBEAM_CONFIG['distance_thresholds']['sgt_objects']['safe']}m, "
-                  f"谨慎={self.LIGHTBEAM_CONFIG['distance_thresholds']['sgt_objects']['caution']}m, "
-                  f"危险={self.LIGHTBEAM_CONFIG['distance_thresholds']['sgt_objects']['danger']}m")
-        
         print("="*70)
+
