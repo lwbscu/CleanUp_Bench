@@ -11,7 +11,7 @@ import os
 class OSGTCleanupSystemConfig:
     """OSGT标准清洁系统配置类（四类物体通用版）"""
 
-    def __init__(self, username=None, scenario_type="hospital"):
+    def __init__(self, username=None, scenario_type="office"):
         # ==================== 用户配置 ====================
         if username is None:
             username = (
@@ -45,8 +45,8 @@ class OSGTCleanupSystemConfig:
         }
         
         self.BACKGROUND_ENVIRONMENT = {
-            # 场景usd文件路径（相对Hospital库）
-            "usd_path": "My_asset/background/Hospital.usd",
+            # 场景usd文件路径（相对Office库）
+            "usd_path": "My_asset/background/Office.usd",
             # 缩放比例
             "scale": 1,
             # 位置 [x, y, z]
@@ -61,7 +61,7 @@ class OSGTCleanupSystemConfig:
         self.PATHS = {
             "residential_assets_root": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "NVIDIA/Assets/ArchVis/Hospital"
+                "NVIDIA/Assets/ArchVis/Office"
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
@@ -240,26 +240,55 @@ class OSGTCleanupSystemConfig:
         self.ASSET_PATHS = {
             # O类 - 障碍物配置 (通用环境障碍)
             "obstacles": {
-                # 基本的障碍物资产
-                # "obstacle_1": "Furniture/Desks/Desk_01.usd",
+                "chair_b1": "My_asset/O/ChairB_1.usd",
+                "chair_b2": "My_asset/O/ChairB_2.usd",
+                "dining_table": "My_asset/O/DiningTable_grp.usd",
+                "folding_table": "My_asset/O/FoldingTable_grp.usd",
+                "fridge_area": "My_asset/O/FridgeArea_grp.usd",
+                "iron_board": "My_asset/O/IronBoard_1.usd",
+                "kitchen_table": "My_asset/O/KitchenTable_1.usd",
+                "stool_metal": "My_asset/O/StoolMetalWire_1.usd",
+                "stool_wooden": "My_asset/O/StoolWooden_1.usd",
+                "stove_area": "My_asset/O/StoveArea_grp.usd",
             },
             
             # S类 - 可清扫物配置 (小颗粒吸附收集)
             "sweepable_items": {
-                # 基本的可清扫物资产
-                # "sweepable_1": "Decor/Tchotchkes/Orange_01.usd",
+                "paper_crumpled": "My_asset/O/PaperBagCrumpled_1.usd",  # 临时使用O类中的纸质物品
+                "cheerio_small": "My_asset/G/assets/Cheerio/Cheerio.usd",  # 小颗粒物
+                "crayon_piece": "My_asset/G/assets/Crayon/Crayon.usd",    # 蜡笔碎片
+                "paper_small": "My_asset/G/assets/PaperSmall/PaperSmall.usd",  # 纸屑
+                "nail_small": "My_asset/G/assets/Nail/Nail.usd",          # 小钉子
             },
             
             # G类 - 可抓取物配置 (机械臂精确抓取)
             "graspable_items": {
-                # 基本的可抓取物资产
-                # "graspable_1": "Food/Containers/TinCan.usd",
+                "book": "My_asset/G/assets/Book/Book.usd",
+                "bottle": "My_asset/G/assets/Bottle/Bottle.usd",
+                "bowl": "My_asset/G/assets/Bowl/Bowl.usd",
+                "cup": "My_asset/G/assets/Cup/Cup.usd",
+                "fork": "My_asset/G/assets/Fork/Fork.usd",
+                "knife": "My_asset/G/assets/Knife/Knife.usd",
+                "spoon": "My_asset/G/assets/Spoon/Spoon.usd",
+                "plate": "My_asset/G/assets/Plate/Plate.usd",
+                "tin_can": "My_asset/G/Containers/TinCan.usd",
+                "mason_jar": "My_asset/G/Containers/MasonJar.usd",
+                "mechanical_pencil": "My_asset/G/Supplies/MechanicalPencil.usd",
+                "eraser": "My_asset/G/Supplies/Eraser.usd",
+                "sketchbook": "My_asset/G/Supplies/Sketchbook.usd",
+                "chess_pawn": "My_asset/G/Games/ChessSet/Chess_Pawn.usd",
+                "d20_die": "My_asset/G/Games/D20.usd",
+                "rubix_cube": "My_asset/G/Games/RubixCube.usd",
+                "book_stack": "My_asset/G/Books/BookStack_01.usd",
+                "encyclopedia": "My_asset/G/Books/Encyclopedia01.usd",
             },
             
             # T类 - 任务区配置 (基础形状表示功能区)
             "task_areas": {
-                # 基本的任务区资产
-                # "collection_zone_s": "Furniture/Desks/Desk_01.usd",
+                "collection_zone_s": "My_asset/G/assets/FoldingTable/FoldingTable.usd",  # S类回收桌
+                "collection_zone_g": "My_asset/G/assets/KitchenTable/KitchenTable.usd", # G类存放桌
+                "sorting_station": "My_asset/G/assets/Chair/Chair.usd",                 # 分拣区域
+                "maintenance_area": "My_asset/G/assets/StoolWooden/StoolWooden.usd",    # 维护站点
             }
         }
         
