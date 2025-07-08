@@ -11,7 +11,7 @@ import os
 class OSGTCleanupSystemConfig:
     """OSGT标准清洁系统配置类（四类物体通用版）"""
 
-    def __init__(self, username=None, scenario_type="restaurant"):
+    def __init__(self, username=None, scenario_type="lobby"):
         # ==================== 用户配置 ====================
         if username is None:
             username = (
@@ -45,12 +45,12 @@ class OSGTCleanupSystemConfig:
         }
         
         self.BACKGROUND_ENVIRONMENT = {
-            # 场景usd文件路径（相对Restaurant库）
-            "usd_path": "My_asset/background/Restaurant.usd",
+            # 场景usd文件路径（相对Lobby库）
+            "usd_path": "My_asset/background/Lobby.usd",
             # 缩放比例
             "scale": 0.02,
             # 位置 [x, y, z]
-            "position": [0.0, 0.0, 0.0],
+            "position": [-40, -50, 0.0],
             # 旋转（绕z轴，单位度）
             "rotation_z": 0.0
         }
@@ -61,7 +61,7 @@ class OSGTCleanupSystemConfig:
         self.PATHS = {
             "residential_assets_root": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "NVIDIA/Assets/ArchVis/Restaurant"
+                "NVIDIA/Assets/ArchVis/Lobby"
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
