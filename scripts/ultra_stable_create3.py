@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-OSGT四类物体标准室内清洁系统（通用版）
+OSGT四类物体标准室内清洁系统（通用版+LightBeam避障）
 O类-障碍物 | S类-可清扫物 | G类-可抓取物 | T类-任务区
 适配场景：家庭住宅、学校、医院、工厂等
-集成高级抓取策略、CUDA加速、力控制反馈
+集成高级抓取策略、CUDA加速、力控制反馈、LightBeam避障
 """
 
 from isaacsim import SimulationApp
@@ -66,8 +66,15 @@ from pick_and_place import (
     GraspPhase
 )
 
+# 导入OSGT LightBeam避障系统
+from lightbeam_distance import (
+    OSGTLightBeamSensorSystem,
+    OSGTAvoidanceLevel,
+    create_osgt_lightbeam_system
+)
+
 class OSGTCreate3CleanupSystem:
-    """基于OSGT四类物体标准的Create-3+机械臂室内清洁系统（通用版）"""
+    """基于OSGT四类物体标准的Create-3+机械臂室内清洁系统（通用版+LightBeam避障）"""
     
     def __init__(self, config):
         self.config = config
@@ -124,11 +131,15 @@ class OSGTCreate3CleanupSystem:
         # 简化导航系统
         self.advanced_navigation = None
         
+        # LightBeam避障系统
+        self.lightbeam_system = None
+        self.lightbeam_enabled = config.LIGHTBEAM_CONFIG.get("enable_lightbeam", True)
+        
         # 从配置读取导航参数（保留兼容性）
         self.grid_resolution = config.NAVIGATION["grid_resolution"]
         self.map_size = config.NAVIGATION["map_size"]
         
-        # 性能监控（OSGT增强版）
+        # 性能监控（OSGT增强版+LightBeam）
         self.performance_stats = {
             'movement_commands_sent': 0,
             'successful_movements': 0,
@@ -140,8 +151,16 @@ class OSGTCreate3CleanupSystem:
             'osgt_sweepables_collected': 0,
             'osgt_graspables_collected': 0,
             'osgt_task_areas_visited': 0,
-            'cuda_acceleration_used': False
+            'cuda_acceleration_used': False,
+            'lightbeam_avoidance_activations': 0,
+            'lightbeam_safe_detections': 0,
+            'lightbeam_caution_detections': 0,
+            'lightbeam_danger_detections': 0
         }
+        
+        # LightBeam状态监控
+        self.last_lightbeam_report_time = 0
+        self.lightbeam_report_interval = config.LIGHTBEAM_CONFIG["detection_settings"]["report_interval"]
     
     def get_asset_path(self, relative_path):
         """获取住宅资产的完整路径"""
@@ -195,8 +214,8 @@ class OSGTCreate3CleanupSystem:
         return True
     
     def initialize_isaac_sim(self):
-        """初始化Isaac Sim环境（OSGT+CUDA优化）"""
-        print("🚀 正在初始化Isaac Sim环境（OSGT四类+CUDA加速）...")
+        """初始化Isaac Sim环境（OSGT四类+CUDA优化+LightBeam）"""
+        print("🚀 正在初始化Isaac Sim环境（OSGT四类+CUDA加速+LightBeam避障）...")
         
         try:
             # 验证资产文件
@@ -252,7 +271,16 @@ class OSGTCreate3CleanupSystem:
             self.advanced_pick_place.set_world_reference(self.world)
             print("✅ OSGT高级抓取放下系统初始化完成")
             
-            print("✅ Isaac Sim环境初始化完成（OSGT四类+CUDA加速）")
+            # 初始化LightBeam避障系统
+            if self.lightbeam_enabled:
+                self.lightbeam_system = create_osgt_lightbeam_system(
+                    self.config, self.world, self.robot_prim_path
+                )
+                print("✅ OSGT LightBeam避障系统初始化完成")
+            else:
+                print("⚠️ LightBeam避障系统已禁用")
+            
+            print("✅ Isaac Sim环境初始化完成（OSGT四类+CUDA加速+LightBeam避障）")
             return True
             
         except Exception as e:
@@ -289,8 +317,8 @@ class OSGTCreate3CleanupSystem:
             print(f"照明设置失败: {e}")
     
     def initialize_robot(self):
-        """初始化Create-3+机械臂（配置驱动）"""
-        print("🤖 正在初始化Create-3+机械臂（OSGT版）...")
+        """初始化Create-3+机械臂（配置驱动+LightBeam）"""
+        print("🤖 正在初始化Create-3+机械臂（OSGT版+LightBeam）...")
         
         try:
             if self.config.DEBUG["enable_debug_output"]:
@@ -320,6 +348,16 @@ class OSGTCreate3CleanupSystem:
             )
             
             print("✅ 配置驱动的差分控制器创建成功")
+            
+            # 初始化LightBeam传感器（在机器人创建后）
+            if self.lightbeam_enabled and self.lightbeam_system:
+                success = self.lightbeam_system.initialize_sensors()
+                if success:
+                    print("✅ LightBeam传感器初始化成功")
+                else:
+                    print("⚠️ LightBeam传感器初始化失败")
+                    self.lightbeam_enabled = False
+            
             return True
             
         except Exception as e:
@@ -649,7 +687,7 @@ class OSGTCreate3CleanupSystem:
         return ObjectWrapper(prim_path, name, position, self.world.stage)
     
     def setup_post_load(self):
-        """World加载后的设置（配置驱动）"""
+        """World加载后的设置（配置驱动+LightBeam）"""
         print("🔧 正在进行配置驱动的后加载设置...")
         
         try:
@@ -947,10 +985,38 @@ class OSGTCreate3CleanupSystem:
         return self.current_position.copy(), self.current_orientation
     
     def _send_movement_command(self, linear_vel, angular_vel):
-        """发送移动命令（优化连续性）"""
+        """发送移动命令（优化连续性+LightBeam避障）"""
         try:
             # 记录性能统计
             self.performance_stats['movement_commands_sent'] += 1
+            
+            # LightBeam避障处理
+            if self.lightbeam_enabled and self.lightbeam_system:
+                # 更新传感器位置
+                robot_pos, robot_yaw = self.get_robot_pose()
+                self.lightbeam_system.update_sensor_positions(robot_pos, robot_yaw)
+                
+                # 计算避障速度修正
+                linear_vel, angular_vel = self.lightbeam_system.compute_avoidance_velocity(
+                    linear_vel, angular_vel
+                )
+                
+                # 更新避障统计
+                avoidance_level = self.lightbeam_system.get_current_avoidance_level()
+                if avoidance_level == OSGTAvoidanceLevel.CAUTION:
+                    self.performance_stats['lightbeam_caution_detections'] += 1
+                elif avoidance_level == OSGTAvoidanceLevel.DANGER:
+                    self.performance_stats['lightbeam_danger_detections'] += 1
+                    self.performance_stats['lightbeam_avoidance_activations'] += 1
+                else:
+                    self.performance_stats['lightbeam_safe_detections'] += 1
+                
+                # 定期报告LightBeam状态
+                current_time = time.time()
+                if (current_time - self.last_lightbeam_report_time >= self.lightbeam_report_interval and
+                    self.config.DEBUG["show_lightbeam_status"]):
+                    self.lightbeam_system.print_detection_status()
+                    self.last_lightbeam_report_time = current_time
             
             # 限制速度范围
             linear_vel = np.clip(linear_vel, -self.max_linear_velocity, self.max_linear_velocity)
@@ -1018,7 +1084,7 @@ class OSGTCreate3CleanupSystem:
                 print(f"停止机器人失败: {e}")
     
     def smart_navigate_to_target(self, target_pos, osgt_type="sweepable", max_time=None, tolerance=None):
-        """OSGT智能导航（根据物体类型调整参数）"""
+        """OSGT智能导航（根据物体类型调整参数+LightBeam避障）"""
         # 使用OSGT配置的默认值
         if max_time is None:
             if osgt_type == "sweepable":
@@ -1043,6 +1109,11 @@ class OSGTCreate3CleanupSystem:
         try:
             if self.config.DEBUG["show_navigation_progress"]:
                 print(f"🎯 OSGT导航到{osgt_type}目标: [{target_pos[0]:.3f}, {target_pos[1]:.3f}]")
+                
+                # 显示LightBeam状态
+                if self.lightbeam_enabled and self.lightbeam_system:
+                    avoidance_level = self.lightbeam_system.get_current_avoidance_level()
+                    print(f"   🔦 LightBeam状态: {avoidance_level.value}")
             
             # 记录导航开始时间
             nav_start_time = time.time()
@@ -1110,7 +1181,7 @@ class OSGTCreate3CleanupSystem:
             return False
     
     def collect_sweepable_item(self, sweepable_object):
-        """收集S类可清扫物（吸附收集）"""
+        """收集S类可清扫物（吸附收集+LightBeam避障）"""
         try:
             item_name = sweepable_object.name
             print(f"🧹 收集S类可清扫物: {item_name}")
@@ -1149,7 +1220,7 @@ class OSGTCreate3CleanupSystem:
             return False
     
     def collect_graspable_item(self, graspable_object):
-        """收集G类可抓取物（高级机械臂抓取）"""
+        """收集G类可抓取物（高级机械臂抓取+LightBeam避障）"""
         try:
             item_name = graspable_object.name
             print(f"🦾 收集G类可抓取物: {item_name} (高级抓取)")
@@ -1190,7 +1261,7 @@ class OSGTCreate3CleanupSystem:
             return False
     
     def visit_task_area(self, task_area_object):
-        """访问T类任务区（完成特定任务）"""
+        """访问T类任务区（完成特定任务+LightBeam避障）"""
         try:
             area_name = task_area_object.name
             print(f"🎯 访问T类任务区: {area_name}")
@@ -1233,13 +1304,24 @@ class OSGTCreate3CleanupSystem:
             return False
     
     def run_osgt_cleanup_demo(self):
-        """运行OSGT四类物体清洁演示（通用版）"""
+        """运行OSGT四类物体清洁演示（通用版+LightBeam避障）"""
         print("\n" + "="*70)
         print("🏠 OSGT四类物体标准室内清洁系统演示")
         print(f"场景类型: {self.config.SCENARIO_TYPE.upper()}")
         print("🚧 O类-障碍物 | 🧹 S类-可清扫物 | 🦾 G类-可抓取物 | 🎯 T类-任务区")
-        print("配置驱动 | 统一时间步 | CUDA加速抓取 | 力控制反馈")
+        print("配置驱动 | 统一时间步 | CUDA加速抓取 | 力控制反馈 | LightBeam避障")
         print("="*70)
+        
+        # 显示LightBeam状态
+        if self.lightbeam_enabled and self.lightbeam_system:
+            print(f"🔦 LightBeam避障系统: 启用")
+            lightbeam_config = self.config.LIGHTBEAM_CONFIG
+            print(f"   传感器数量: {len(lightbeam_config['sensors'])}")
+            print(f"   距离阈值: 安全={lightbeam_config['distance_thresholds']['safe']}m, "
+                  f"谨慎={lightbeam_config['distance_thresholds']['caution']}m, "
+                  f"危险={lightbeam_config['distance_thresholds']['danger']}m")
+        else:
+            print(f"🔦 LightBeam避障系统: 禁用")
         
         # 使用配置的稳定时间
         self._wait_for_stability(self.config.EXPERIMENT["stabilization_time"])
@@ -1283,6 +1365,13 @@ class OSGTCreate3CleanupSystem:
                     self._move_arm_to_pose(pose)
         
         self._move_arm_to_pose("home")
+        
+        # LightBeam初始检测
+        if self.lightbeam_enabled and self.lightbeam_system:
+            print(f"\n🔦 LightBeam初始环境扫描...")
+            robot_pos, robot_yaw = self.get_robot_pose()
+            self.lightbeam_system.update_sensor_positions(robot_pos, robot_yaw)
+            self.lightbeam_system.print_detection_status()
         
         collection_success = 0
         total_items = len(self.sweepable_objects) + len(self.graspable_objects)
@@ -1342,16 +1431,20 @@ class OSGTCreate3CleanupSystem:
         if self.advanced_pick_place:
             self.advanced_pick_place.print_performance_report()
         
+        # 显示LightBeam统计
+        if self.lightbeam_enabled and self.lightbeam_system:
+            self.lightbeam_system.print_detection_stats()
+        
         # 显示OSGT配置总结
         self.config.print_summary()
         
         print("\n✅ OSGT四类物体清洁演示完成！")
         print("💡 要调整参数，请编辑 config.py 文件")
         print("🏢 通用设计，适配家庭、学校、医院、工厂等场景")
-        print("🔧 O类避障 | S类吸附 | G类精确抓取 | T类任务执行")
+        print("🔧 O类避障 | S类吸附 | G类精确抓取 | T类任务执行 | LightBeam实时避障")
     
     def _print_osgt_performance_stats(self):
-        """打印OSGT性能统计（增强版）"""
+        """打印OSGT性能统计（增强版+LightBeam）"""
         stats = self.performance_stats
         success_rate = 0
         if stats['movement_commands_sent'] > 0:
@@ -1372,6 +1465,19 @@ class OSGTCreate3CleanupSystem:
         print(f"   🧹 S类收集成功: {stats['osgt_sweepables_collected']}")
         print(f"   🦾 G类收集成功: {stats['osgt_graspables_collected']}")
         print(f"   🎯 T类访问成功: {stats['osgt_task_areas_visited']}")
+        
+        # LightBeam统计
+        if self.lightbeam_enabled:
+            total_detections = (stats['lightbeam_safe_detections'] + 
+                              stats['lightbeam_caution_detections'] + 
+                              stats['lightbeam_danger_detections'])
+            if total_detections > 0:
+                print(f"\n🔦 LightBeam避障统计:")
+                print(f"   总检测次数: {total_detections}")
+                print(f"   安全检测: {stats['lightbeam_safe_detections']} ({stats['lightbeam_safe_detections']/total_detections*100:.1f}%)")
+                print(f"   谨慎检测: {stats['lightbeam_caution_detections']} ({stats['lightbeam_caution_detections']/total_detections*100:.1f}%)")
+                print(f"   危险检测: {stats['lightbeam_danger_detections']} ({stats['lightbeam_danger_detections']/total_detections*100:.1f}%)")
+                print(f"   避障激活: {stats['lightbeam_avoidance_activations']}")
         
         if stats['total_navigation_time'] > 0:
             avg_speed = stats['total_distance_traveled'] / stats['total_navigation_time']
@@ -1396,7 +1502,7 @@ class OSGTCreate3CleanupSystem:
             print(f"清理时出错: {e}")
 
 def main():
-    """主函数（OSGT四类物体版）"""
+    """主函数（OSGT四类物体版+LightBeam避障）"""
     
     # 显示OSGT配置摘要
     config.print_summary()
@@ -1404,7 +1510,7 @@ def main():
     system = OSGTCreate3CleanupSystem(config)
     
     try:
-        print("🚀 启动OSGT四类物体清洁系统（通用版+CUDA加速）...")
+        print("🚀 启动OSGT四类物体清洁系统（通用版+CUDA加速+LightBeam避障）...")
         
         # 高效初始化
         success = system.initialize_isaac_sim()
@@ -1442,6 +1548,7 @@ def main():
         print("\n💡 按 Ctrl+C 退出演示")
         print("💡 配置文件: config.py")
         print("🏢 OSGT四类标准：O类避障 | S类吸附 | G类精确抓取 | T类任务执行")
+        print("🔦 LightBeam实时避障：三级距离检测，平滑避障策略")
         print("🌐 通用设计，适配家庭、学校、医院、工厂等场景")
         try:
             while True:
