@@ -72,8 +72,8 @@ class OSGTCleanupSystemConfig:
             },
             "restaurant": {
                 "usd_path": "My_asset/background/Restaurant.usd",
-                "scale": 0.02,
-                "position": [0.0, 0.0, 0.0],
+                "scale": 0.01,
+                "position": [-4.26926, 11.01489, 0.0],
                 "rotation_z": 270.0
             },
             # 其他场景类型默认使用Lobby配置
@@ -188,7 +188,7 @@ class OSGTCleanupSystemConfig:
                 }
             },
             "office": {
-                # 办公室环境 - 更紧凑的布局
+                # 办公室环境
                 "obstacles": {
                     # "chair_b1": [2.0, 1.0, 0.0, 0.0],
                     # "dining_table": [1.0, -3.0, 0.0, 0.0],
@@ -239,7 +239,7 @@ class OSGTCleanupSystemConfig:
                 },
                 "task_areas": {
                     # T类 - 任务区位置配置 (1个任务区在医院边界内)
-                    "trash_can": [-2555.0, 471.0, 0.0, 0.0],      # 垃圾桶
+                    "trash_can": [-2555.0, 460.0, 0.0, 0.0],      # 垃圾桶
                 }
             },
             "kitchen": {
@@ -275,35 +275,35 @@ class OSGTCleanupSystemConfig:
             },
             "restaurant": {
                 # 餐厅环境 - 用餐区域布局
+                # 环境边界: [-441,903,0] [2187,903,0] [2187,221,0] [523,114,0]
+                #  [523,-2413,0] [2133,-1627,0]  [2105,-2418,0]
+                # X轴范围: -441 到 2187, Y轴范围: -2418 到 903
                 "obstacles": {
-                    "chair_b1": [2.5, 1.5, 0.0, 0.0],
-                    "dining_table": [1.0, -3.5, 0.0, 0.0],
-                    "folding_table": [-7.0, 0.8, 0.0, 0.0],
-                    "kitchen_table": [5.0, -7.0, 0.0, 0.0],
-                    "stool_wooden": [-2.0, -4.5, 0.0, 0.0],
-                    "book_stack_01": [6.0, -2.5, 0.0, 0.0],
-                    "encyclopedia": [-9.0, -1.0, 0.0, 0.0]
+                    # "chair_b1": [2.5, 1.5, 0.0, 0.0],
+                    # "dining_table": [1.0, -3.5, 0.0, 0.0],
+                    # "folding_table": [-7.0, 0.8, 0.0, 0.0],
+                    # "kitchen_table": [5.0, -7.0, 0.0, 0.0],
+                    # "stool_wooden": [-2.0, -4.5, 0.0, 0.0],
+                    # "book_stack_01": [6.0, -2.5, 0.0, 0.0],
+                    # "encyclopedia": [-9.0, -1.0, 0.0, 0.0]
                 },
                 "sweepable": {
-                    "bubble_marble_02": [1.8, 0.8, 0.05],
-                    "caster_bearing": [-3.5, -2.8, 0.05],
-                    "cheerio_geom": [3.8, -4.5, 0.05],
-                    "d20_01": [-5.5, 0.4, 0.08],
-                    "metalballs": [0.9, -8.0, 0.03],
-                    "plasticballs": [-10.5, -3.5, 0.03]
+                    # S类 - 可清扫物位置配置 (6个物体在餐厅边界内随机分布)
+                    "bubble_marble_02": [1200.0, 700.0, 0.05],       # 气泡弹珠2
+                    "caster_bearing": [-200.0, 400.0, 0.05],         # 脚轮轴承
+                    "metalballs": [1500.0, -1800.0, 0.03],           # 金属球
+                    "plasticballs": [-300.0, 800.0, 0.03],           # 塑料球
                 },
                 "graspable": {
-                    "mechanical_pencil": [-1.8, 1.2, 0.1],
-                    "cup": [3.5, -1.8, 0.05],
-                    "bottle": [-6.0, -5.5, 0.1],
-                    "fork": [4.8, 0.6, 0.1],
-                    "ball": [-0.8, -6.5, 0.05],
-                    "salt_shaker": [7.0, -3.8, 0.08]
+                    # G类 - 可抓取物位置配置 (6个物体在餐厅边界内随机分布)
+                    "mechanical_pencil": [1000.0, 500.0, 0.1],       # 机械铅笔
+                    "bottle": [1900.0, 482.0, 0.1],                  # 瓶子
+                    "salt_shaker": [2000.0, -2000.0, 0.08],          # 盐瓶
                 },
                 "task_areas": {
-                    "trash_can": [2.5, -8.5, 0.0, 0.0],
-                    "recycling_bin": [-4.5, 0.8, 0.0, 45.0],
-                    "storage_box": [-10.0, -6.5, 0.0, 0.0]
+                    # T类 - 任务区位置配置 (3个任务区在餐厅边界内随机分布)
+                    "trash_can": [2100.0, -2300.0, 0.0, 0.0],        # 垃圾桶
+                    "recycling_bin": [-350.0, 850.0, 0.0, 45.0],     # 回收箱
                 }
             },
             # 其他场景类型使用lobby的配置作为默认值
