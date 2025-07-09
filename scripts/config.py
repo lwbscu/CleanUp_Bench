@@ -65,7 +65,7 @@ class OSGTCleanupSystemConfig:
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "Isaac/Robots/iRobot/create_3_with_arm.usd"
+                "Isaac/Robots/iRobot/create_3_with_arm_lightbeam.usd"
             ),
             "robot_prim_path": "/World/create3_robot",
         }
@@ -97,8 +97,8 @@ class OSGTCleanupSystemConfig:
         self.OBSTACLES_POSITIONS = {
             # 格式: "障碍物名": [x, y, z, rotation_z_degrees]
             # 适配多场景：家庭(桌椅)、学校(课桌)、医院(病床)、工厂(设备)
-            "obstacle_1": [280.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
-            "obstacle_2": [210.0, 60.0, 0.0, 0.0],      # 座椅/推车
+            "obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
+            "obstacle_2": [140.0, 60.0, 0.0, 0.0],      # 座椅/推车
             "obstacle_3": [-200.0, 180.0, 0.0, 0.0],    # 中央设施
             "obstacle_4": [350.0, -280.0, 0.0, 45.0],   # 边角设备
             "obstacle_5": [-450.0, -150.0, 0.0, 90.0],  # 存储设施
@@ -109,7 +109,7 @@ class OSGTCleanupSystemConfig:
         self.SWEEPABLE_POSITIONS = {
             # 格式: "可清扫物名": [x, y, z]
             # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
-            "sweepable_1": [340.0, 150.0, 0.03],        # 工作区域碎渣
+            "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
             "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
             "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
             "sweepable_4": [-680.0, 120.0, 0.015],      # 清洁盲区
@@ -398,7 +398,7 @@ class OSGTCleanupSystemConfig:
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "Isaac/Robots/iRobot/create_3_with_arm.usd"
+                "Isaac/Robots/iRobot/create_3_with_arm_lightbeam.usd"
             ),
         })
         
@@ -545,3 +545,4 @@ class OSGTCleanupSystemConfig:
         print(f"🎯 OSGT导航容差: S类 {self.NAVIGATION['tolerance_sweepable']}m, G类 {self.NAVIGATION['tolerance_graspable']}m")
         print(f"⏱️ OSGT导航超时: S类 {self.NAVIGATION['nav_timeout_sweepable']}s, G类 {self.NAVIGATION['nav_timeout_graspable']}s")
         print("="*70)
+
