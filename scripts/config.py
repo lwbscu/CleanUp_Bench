@@ -11,7 +11,7 @@ import os
 class OSGTCleanupSystemConfig:
     """OSGT标准清洁系统配置类（四类物体通用版）"""
 
-    def __init__(self, username=None, scenario_type="residential"):
+    def __init__(self,username=None, scenario_type ="lobby"):
         # ==================== 用户配置 ====================
         if username is None:
             username = (
@@ -22,7 +22,7 @@ class OSGTCleanupSystemConfig:
             )
         
         self.USERNAME = username
-        self.SCENARIO_TYPE = scenario_type  # residential, school, hospital, factory
+        self.SCENARIO_TYPE = scenario_type  # residential, school, hospital
         print(f"🔧 配置用户: {self.USERNAME}")
         print(f"🏢 场景类型: {self.SCENARIO_TYPE}")
         
@@ -44,15 +44,104 @@ class OSGTCleanupSystemConfig:
             ]
         }
         
+        # 根据场景类型配置完整的背景场景参数
+        background_scene_mapping = {
+            "lobby": {
+                "usd_path": "My_asset/background/Lobby.usd",
+                "scale": 0.02,
+                "position": [-40, -50, 0.0],
+                "rotation_z": 0.0
+            },
+            "lobby_collision": {
+                "usd_path": "My_asset/background/Lobby_collision.usd",
+                "scale": 0.02,
+                "position": [-40, -50, 0.0],
+                "rotation_z": 0.0
+            },
+            "office": {
+                "usd_path": "My_asset/background/Office.usd",
+                "scale": 1,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "office_collision": {
+                "usd_path": "My_asset/background/Office_collision.usd",
+                "scale": 1,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "hospital": {
+                "usd_path": "My_asset/background/Hospital.usd",
+                "scale": 1,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "hospital_collision": {
+                "usd_path": "My_asset/background/Hospital_collision.usd",
+                "scale": 1,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "kitchen": {
+                "usd_path": "My_asset/background/Kitchen.usd",
+                "scale": 0.02,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "kitchen_collision": {
+                "usd_path": "My_asset/background/Kitchen_collision.usd",
+                "scale": 0.02,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
+            "restaurant": {
+                "usd_path": "My_asset/background/Restaurant.usd",
+                "scale": 0.01,
+                "position": [-4.26926, 11.01489, 0.0],
+                "rotation_z": 270.0
+            },
+            "restaurant_collision": {
+                "usd_path": "My_asset/background/Restaurant_collision.usd",
+                "scale": 0.01,
+                "position": [-4.26926, 11.01489, 0.0],
+                "rotation_z": 270.0
+            },
+            # 其他场景类型默认使用Lobby配置
+            "residential": {
+                "usd_path": "My_asset/background/Lobby.usd",
+                "scale": 0.02,
+                "position": [-40, -50, 0.0],
+                "rotation_z": 0.0
+            },
+            "school": {
+                "usd_path": "My_asset/background/Office.usd",
+                "scale": 0.025,
+                "position": [-35, -45, 0.0],
+                "rotation_z": 45.0
+            },
+            "factory": {
+                "usd_path": "My_asset/background/Office.usd",
+                "scale": 0.03,
+                "position": [-60, -70, 0.0],
+                "rotation_z": 0.0
+            }
+        }
+        
+        # 获取当前场景类型的完整配置，如果没有找到则使用lobby的默认配置
+        selected_background_config = background_scene_mapping.get(
+            self.SCENARIO_TYPE, 
+            background_scene_mapping["lobby"]
+        )
+        
         self.BACKGROUND_ENVIRONMENT = {
-            # 场景usd文件路径（相对住宅资产库）
-            "usd_path": "Kitchen_set/Kitchen_set_instanced.usd",
-            # 缩放比例
-            "scale": 0.02,
-            # 位置 [x, y, z]
-            "position": [0.0, 0.0, 0.0],
-            # 旋转（绕z轴，单位度）
-            "rotation_z": 0.0
+            # 场景usd文件路径（根据scenario_type自动选择）
+            "usd_path": selected_background_config["usd_path"],
+            # 缩放比例（根据场景优化）
+            "scale": selected_background_config["scale"],
+            # 位置 [x, y, z]（根据场景调整）
+            "position": selected_background_config["position"],
+            # 旋转（绕z轴，单位度）（根据场景方向优化）
+            "rotation_z": selected_background_config["rotation_z"]
         }
         # 自动检测资产路径
         self._detect_asset_paths()
@@ -61,7 +150,7 @@ class OSGTCleanupSystemConfig:
         self.PATHS = {
             "residential_assets_root": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "NVIDIA/Assets/ArchVis/Residential"
+                "NVIDIA/Assets/ArchVis/Lobby"
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
@@ -82,67 +171,194 @@ class OSGTCleanupSystemConfig:
             "sweepable_items": 0.02,     # 2% (小颗粒物：纸屑、碎渣等)
             
             # G类 - 可抓取物缩放
-            "graspable_items": 0.02,     # 2% (可抓取物：工具、容器等)
+            "graspable_items": 0.01,     # 1% (可抓取物：工具、容器等)
             
             # T类 - 任务区缩放
-            "task_areas": 0.02,          # 2% (回收区、存放区等)
+            "task_areas": 1,          # 2% (回收区、存放区等)
 
             # 全局缩放
             "global_scale": 1.0,         # 全局缩放倍数
         }
         
         # ==================== OSGT四类物体位置配置 ====================
+        # 根据场景类型配置不同的OSGT四类物体位置
+        scenario_positions_mapping = {
+            "lobby": {
+                # Lobby环境边界: [1348,153,0.08]  [-2197,153,0.08] 
+                #               [1348,-1985,0.08] [-370,-1960,0.08] [-370,-1339,0.08]  [-2128,-1339,0.08]
+                "obstacles": {
+                    # "chair_b1": [450.0, 80.0, 0.0, 0.0],
+                    # "dining_table": [200.0, -600.0, 0.0, 0.0],
+                    # "folding_table": [-1200.0, 120.0, 0.0, 90.0],
+                    # "kitchen_table": [800.0, -1200.0, 0.0, 0.0],
+                    # "stool_wooden": [-500.0, -800.0, 0.0, 0.0],
+                    # "book_stack_01": [1000.0, -400.0, 0.0, 0.0],
+                    # "encyclopedia": [-1500.0, -200.0, 0.0, 0.0]
+                },
+                "sweepable": {
+                    "bubble_marble_02": [300.0, 100.0, 0.05],
+                    "caster_bearing": [-600.0, -500.0, 0.05],
+                    "cheerio_geom": [700.0, -800.0, 0.05],
+                    "d20_01": [-1000.0, 50.0, 0.08],
+                    "metalballs": [150.0, -1400.0, 0.03],
+                    "plasticballs": [-1800.0, -600.0, 0.03]
+                },
+                "graspable": {
+                    "mechanical_pencil": [-400.0, 120.0, 0.1],
+                    "cup": [600.0, -300.0, 0.05],
+                    "bottle": [-1100.0, -1000.0, 0.1],
+                    "fork": [900.0, 80.0, 0.1],
+                    "ball": [-200.0, -1200.0, 0.05],
+                    "salt_shaker": [1200.0, -700.0, 0.08]
+                },
+                "task_areas": {
+                    "trash_can": [400.0, -1500.0, 0.0, 0.0],
+                    "recycling_bin": [-800.0, 100.0, 0.0, 45.0],
+                    "storage_box": [-1600.0, -1200.0, 0.0, 0.0]
+                }
+            },
+            "office": {
+                # 办公室环境
+                "obstacles": {
+                    # "chair_b1": [2.0, 1.0, 0.0, 0.0],
+                    # "dining_table": [1.0, -3.0, 0.0, 0.0],
+                    # "folding_table": [-6.0, 0.5, 0.0, 90.0],
+                    # "kitchen_table": [4.0, -6.0, 0.0, 0.0],
+                    # "stool_wooden": [-2.5, -4.0, 0.0, 0.0],
+                    # "book_stack_01": [5.0, -2.0, 0.0, 0.0],
+                    # "encyclopedia": [-7.5, -1.0, 0.0, 0.0]
+                },
+                "sweepable": {
+                    "d20_01": [-1583.0, 917.0, 0.08],
+                    "metalballs": [447.0, -715.0, 0.03],
+                    "plasticballs": [-1375, 333.0, 0.03]
+                },
+                "graspable": {
+                    "mechanical_pencil": [-1375, 372, 0.1],
+                    "bottle": [-904, -5.0, 0.1],
+                    "salt_shaker": [412, 905, 0.08]
+                },
+                "task_areas": {
+                    "trash_can": [-1291, 1133, -0.2, 0.0],
+                }
+            },
+            "hospital": {
+                # 医院环境
+                # [1893,91,0] [1893,949,0] [-3237,949,0] [-3237,269,0] 
+                # X轴范围: -3237 到 1893, Y轴范围: 91 到 949
+                "obstacles": {
+                    # "chair_b1": [3.0, 2.0, 0.0, 0.0],
+                    # "dining_table": [1.5, -4.0, 0.0, 0.0],
+                    # "folding_table": [-8.0, 1.0, 0.0, 0.0],
+                    # "kitchen_table": [6.0, -8.0, 0.0, 0.0],
+                    # "stool_wooden": [-3.0, -5.0, 0.0, 0.0],
+                    # "book_stack_01": [7.0, -3.0, 0.0, 0.0],
+                    # "encyclopedia": [-10.0, -1.5, 0.0, 0.0]
+                },
+                "sweepable": {
+                    # S类 - 可清扫物位置配置 (3个物体在医院边界内随机分布)
+                    "bubble_marble_02": [450.0, 720.0, 0.05],      # 气泡弹珠2
+                    "metalballs": [-1800.0, 380.0, 0.03],          # 金属球
+                    "plasticballs": [-2500.0, 850.0, 0.03],       # 塑料球
+                },
+                "graspable": {
+                    # G类 - 可抓取物位置配置 (3个物体在医院边界内随机分布)
+                    "mechanical_pencil": [1200.0, 600.0, 0.1],    # 机械铅笔
+                    "bottle": [-1000.0, 280.0, 0.1],              # 瓶子
+                    "salt_shaker": [800.0, 900.0, 0.08],          # 盐瓶
+                },
+                "task_areas": {
+                    # T类 - 任务区位置配置 (1个任务区在医院边界内)
+                    "trash_can": [-2555.0, 460.0, 0.0, 0.0],      # 垃圾桶
+                }
+            },
+            "kitchen": {
+                # 厨房环境 - 功能区域布局
+                # 环境边界:
+                # [693,94,0],[693,-482,0]
+                # [-199,-482,0],[-199,-33,0]
+                "obstacles": {
+                    # "chair_b1": [1.0, 0.5, 0.0, 0.0],
+                    # "dining_table": [0.5, -1.5, 0.0, 0.0],
+                    # "folding_table": [-3.0, 0.3, 0.0, 90.0],
+                    # "stool_wooden": [-1.25, -2.0, 0.0, 0.0],
+                    # "book_stack_01": [2.5, -1.0, 0.0, 0.0],
+                    # "encyclopedia": [-3.75, -0.5, 0.0, 0.0]
+                },
+                "sweepable": {
+                    # S类 - 可清扫物位置配置 (4个物体在厨房边界内随机分布)
+                    "bubble_marble_02": [120.0, 30.0, 0.05],      # 气泡弹珠2
+                    "caster_bearing": [450.0, -200.0, 0.05],      # 脚轮轴承
+                    "cheerio_geom": [580.0, -350.0, 0.05],        # 小圆环
+                    "d20_01": [-80.0, -120.0, 0.08],              # 20面骰子
+                },
+                "graspable": {
+                    # G类 - 可抓取物位置配置 (4个物体在厨房边界内随机分布)
+                    "mechanical_pencil": [200.0, 60.0, 0.1],      # 机械铅笔
+                    "cup": [500.0, -150.0, 0.05],                 # 杯子
+                    "bottle": [350.0, -400.0, 0.1],               # 瓶子
+                    "fork": [-120.0, -250.0, 0.1],                # 叉子
+                },
+                "task_areas": {
+                    "trash_can": [600.0, -450.0, 0.0, 0.0],       # 垃圾桶(靠近边界)
+                }
+            },
+            "restaurant": {
+                # 餐厅环境 - 用餐区域布局
+                # 环境边界: [-441,903,0] [2187,903,0] [2187,221,0] [523,114,0]
+                #  [523,-2413,0] [2133,-1627,0]  [2105,-2418,0]
+                # X轴范围: -441 到 2187, Y轴范围: -2418 到 903
+                "obstacles": {
+                    # "chair_b1": [2.5, 1.5, 0.0, 0.0],
+                    # "dining_table": [1.0, -3.5, 0.0, 0.0],
+                    # "folding_table": [-7.0, 0.8, 0.0, 0.0],
+                    # "kitchen_table": [5.0, -7.0, 0.0, 0.0],
+                    # "stool_wooden": [-2.0, -4.5, 0.0, 0.0],
+                    # "book_stack_01": [6.0, -2.5, 0.0, 0.0],
+                    # "encyclopedia": [-9.0, -1.0, 0.0, 0.0]
+                },
+                "sweepable": {
+                    # S类 - 可清扫物位置配置 (6个物体在餐厅边界内随机分布)
+                    "bubble_marble_02": [1200.0, 700.0, 0.05],       # 气泡弹珠2
+                    "caster_bearing": [-200.0, 400.0, 0.05],         # 脚轮轴承
+                    "metalballs": [1500.0, -1800.0, 0.03],           # 金属球
+                    "plasticballs": [-300.0, 800.0, 0.03],           # 塑料球
+                },
+                "graspable": {
+                    # G类 - 可抓取物位置配置 (6个物体在餐厅边界内随机分布)
+                    "mechanical_pencil": [1000.0, 500.0, 0.1],       # 机械铅笔
+                    "bottle": [1900.0, 482.0, 0.1],                  # 瓶子
+                    "salt_shaker": [2000.0, -2000.0, 0.08],          # 盐瓶
+                },
+                "task_areas": {
+                    # T类 - 任务区位置配置 (3个任务区在餐厅边界内随机分布)
+                    "trash_can": [2100.0, -2300.0, 0.0, 0.0],        # 垃圾桶
+                    "recycling_bin": [-350.0, 850.0, 0.0, 45.0],     # 回收箱
+                }
+            },
+            # 其他场景类型使用lobby的配置作为默认值
+            "residential": "lobby",
+            "school": "office", 
+            "factory": "office"
+        }
+        
+        # 获取当前场景类型的位置配置
+        selected_positions = scenario_positions_mapping.get(self.SCENARIO_TYPE, "lobby")
+        # 如果是字符串引用，则使用引用的配置
+        if isinstance(selected_positions, str):
+            selected_positions = scenario_positions_mapping[selected_positions]
         
         # O类 - 障碍物位置配置 (Obstacles)
-        self.OBSTACLES_POSITIONS = {
-            # 格式: "障碍物名": [x, y, z, rotation_z_degrees]
-            # 适配多场景：家庭(桌椅)、学校(课桌)、医院(病床)、工厂(设备)
-            "obstacle_1": [150.0, 80.0, 0.0, 0.0],      # 主要工作台/桌面
-            "obstacle_2": [140.0, 60.0, 0.0, 0.0],      # 座椅/推车
-            "obstacle_3": [-200.0, 180.0, 0.0, 0.0],    # 中央设施
-            "obstacle_4": [350.0, -280.0, 0.0, 45.0],   # 边角设备
-            "obstacle_5": [-450.0, -150.0, 0.0, 90.0],  # 存储设施
-            "obstacle_6": [-380.0, -420.0, 0.0, 0.0],   # 大型设备/书架
-        }
+        self.OBSTACLES_POSITIONS = selected_positions["obstacles"]
         
         # S类 - 可清扫物位置配置 (Sweepable Items)
-        self.SWEEPABLE_POSITIONS = {
-            # 格式: "可清扫物名": [x, y, z]
-            # 小颗粒物质：纸屑、食物碎渣、灰尘、金属屑等
-            "sweepable_1": [280.0, 150.0, 0.03],        # 工作区域碎渣
-            "sweepable_2": [520.0, -320.0, 0.03],       # 角落积尘
-            "sweepable_3": [-180.0, 450.0, 0.01],       # 地面碎片
-            "sweepable_4": [-680.0, 120.0, 0.015],      # 清洁盲区
-            "sweepable_5": [750.0, 80.0, 0.015],        # 设备下方
-            "sweepable_6": [-420.0, 650.0, 0.03],       # 通道区域
-            "sweepable_7": [320.0, -580.0, 0.03],       # 边缘区域
-        }
+        self.SWEEPABLE_POSITIONS = selected_positions["sweepable"]
         
         # G类 - 可抓取物位置配置 (Graspable Items)
-        self.GRASPABLE_POSITIONS = {
-            # 格式: "可抓取物名": [x, y, z]
-            # 工具、容器、书籍、零件等需要机械臂抓取的物体
-            "graspable_1": [240.0, 360.0, 0.05],        # 容器类
-            "graspable_2": [-325.0, -240.0, 0.05],      # 工具类
-            "graspable_3": [190.0, -375.0, 0.05],       # 文具类
-            "graspable_4": [425.0, 190.0, 0.05],        # 零件类
-            "graspable_5": [-110.0, 440.0, 0.05],       # 设备类
-            # 书籍等特殊可抓取物
-            "graspable_book_1": [0, -390.0, 0.8],  # 散落书本
-            "graspable_book_3": [-330.0, -370.0, 0.8],  # 桌面书籍
-            "graspable_book_2": [-350.0, -410.0, 0.8],  # 文档资料
-            "spoon_1": [100.0, -300.0, 0.08],  # 勺子
-        }
+        self.GRASPABLE_POSITIONS = selected_positions["graspable"]
         
         # T类 - 任务区位置配置 (Task Areas)
-        self.TASK_AREAS_POSITIONS = {
-            # 格式: "任务区名": [x, y, z, rotation_z_degrees]
-            # 回收区、分拣区、存放区等
-            "collection_zone_s": [800.0, 800.0, 0.0, 0.0],     # S类回收区
-            "collection_zone_g": [-800.0, 800.0, 0.0, 0.0],    # G类存放区
-            "sorting_area": [0.0, 900.0, 0.0, 0.0],             # 分拣中心
-            "maintenance_station": [0.0, -900.0, 0.0, 0.0],     # 维护站点
-        }
+        self.TASK_AREAS_POSITIONS = selected_positions["task_areas"]
         
         # ==================== 机器人控制参数 ====================
         self.ROBOT_CONTROL = {
@@ -242,47 +458,87 @@ class OSGTCleanupSystemConfig:
         
         # ==================== OSGT资产文件映射 ====================
         self.ASSET_PATHS = {
-            # O类 - 障碍物配置 (通用环境障碍)
+            # O类 - 障碍物配置 (办公环境障碍物)
             "obstacles": {
-                "obstacle_1": "Furniture/Desks/Desk_01.usd",          # 桌面/工作台
-                "obstacle_2": "Furniture/Chairs/Chair_Desk.usd",      # 座椅/推车
-                "obstacle_3": "Furniture/CoffeeTables/Midtown.usd",   # 中央设施
-                "obstacle_4": "Furniture/EndTables/Festus01.usd",     # 边角设备
-                "obstacle_5": "Furniture/SofaTables/Ellisville.usd",  # 存储设施
-                "obstacle_6": "Furniture/Bookshelves/Fenton.usd",     # 大型设备
+                "book_11": "My_asset/O/Book_11.usd",
+                "book_stack_01": "My_asset/O/BookStack_01.usd",
+                "book_stack_02": "My_asset/O/BookStack_02.usd",
+                "chair_b1": "My_asset/O/ChairB_1.usd",
+                "dining_table": "My_asset/O/DiningTable_grp.usd",
+                "encyclopedia": "My_asset/O/Encyclopedia01.usd",
+                "folding_table": "My_asset/O/FoldingTable_grp.usd",
+                "fridge_area": "My_asset/O/FridgeArea_grp.usd",
+                "iron_board": "My_asset/O/IronBoard_1.usd",
+                "kitchen_table": "My_asset/O/KitchenTable_1.usd",
+                "paper_bag_crumpled": "My_asset/O/PaperBagCrumpled_1.usd",
+                "stool_metal_wire": "My_asset/O/StoolMetalWire_1.usd",
+                "stool_wooden": "My_asset/O/StoolWooden_1.usd",
+                "stove_area": "My_asset/O/StoveArea_grp.usd",
+                "jar": "My_asset/G/assets/Jar/Jar.usd",
             },
             
             # S类 - 可清扫物配置 (小颗粒吸附收集)
             "sweepable_items": {
-                "sweepable_1": "Decor/Tchotchkes/Orange_01.usd",      # 有机碎渣
-                "sweepable_2": "Decor/Tchotchkes/Orange_02.usd",      # 食物残渣
-                "sweepable_3": "Decor/Tchotchkes/Lemon_01.usd",       # 小型碎片
-                "sweepable_4": "Decor/Tchotchkes/Lemon_02.usd",       # 细小颗粒
-                "sweepable_5": "Decor/Coasters/Coaster_Hexagon.usd",  # 薄片物
-                "sweepable_6": "Misc/Supplies/Eraser.usd",            # 橡胶碎片
-                "sweepable_7": "Entertainment/Games/Solid_Marble.usd", # 滚珠颗粒
+                "bubble_marble_02": "My_asset/S/BubbleMarble_02.usd",
+                "bubble_marble_03": "My_asset/S/BubbleMarble_03.usd",
+                "caster_bearing": "My_asset/S/caster_bearing.usd",
+                "cheerio_geom": "My_asset/S/Cheerio_geom.usd",
+                "d20_01": "My_asset/S/D20_01.usd",
+                "metalballs": "My_asset/S/Metalballs.usd",
+                "plasticballs": "My_asset/S/Plasticballs.usd",
+                "solid_marble_01": "My_asset/S/Solid_Marble_01.usd",
             },
             
-            # G类 - 可抓取物配置 (机械臂精确抓取)
+            # G类 - 可抓取物配置 (马克笔到小水瓶大小的物体)
             "graspable_items": {
-                "graspable_1": "Food/Containers/TinCan.usd",          # 容器类
-                "graspable_2": "Food/Containers/MasonJar.usd",        # 瓶罐类
-                "graspable_3": "Misc/Supplies/MechanicalPencil.usd",  # 工具类
-                "graspable_4": "Entertainment/Games/DiceSet/D6.usd",   # 小型零件
-                "graspable_5": "Entertainment/Games/DiceSet/D20.usd",  # 精密器件
-                # 书籍文档类
-                "graspable_book_1": "Decor/Books/Book_01.usd",
-                "graspable_book_2": "Decor/Books/Book_02.usd", 
-                "graspable_book_3": "Decor/Books/Book_11.usd",
-                "spoon_1": "Kitchen_set/assets/Spoon/Spoon.geom.usd",  # 勺子
+                # 文具类 (马克笔大小)
+                "mechanical_pencil": "My_asset/G/Supplies/MechanicalPencil.usd",
+                "eraser": "My_asset/G/Supplies/Eraser.usd",
+                "makerpen": "My_asset/G/Makerpen.usd",
+                "crayon": "My_asset/G/assets/Crayon/Crayon.usd",
+                
+                # 餐具类 (中等大小)
+                "fork": "My_asset/G/assets/Fork/Fork.usd",
+                "knife": "My_asset/G/assets/Knife/Knife.usd",
+                "spoon": "My_asset/G/assets/Spoon/Spoon.usd",
+                "wooden_spoon": "My_asset/G/assets/WoodenSpoon/WoodenSpoon.usd",
+                "spatula": "My_asset/G/assets/Spatula/Spatula.usd",
+                "whisk": "My_asset/G/assets/Whisk/Whisk.usd",
+                "rolling_pin": "My_asset/G/assets/RollingPin/RollingPin.usd",
+                
+                # 容器类 (小到中等大小)
+                "cup": "My_asset/G/assets/Cup/Cup.usd",
+                
+                "tin_can": "My_asset/G/Containers/TinCan.usd",
+                "mason_jar": "My_asset/G/Containers/MasonJar.usd",
+                "oil_bottle": "My_asset/G/assets/OilBottle/OilBottle.usd",
+                "bottle": "My_asset/G/assets/Bottle/Bottle.usd",
+                "bottle_b": "My_asset/G/assets/BottleB/BottleB.usd",
+                "salt_shaker": "My_asset/G/assets/SaltShaker/SaltShaker.usd",
+                "spice_shaker": "My_asset/G/assets/SpiceShaker/SpiceShaker.usd",
+                "measuring_cup": "My_asset/G/assets/MeasuringCup/MeasuringCup.usd",
+                "measuring_spoon": "My_asset/G/assets/MeasuringSpoon/MeasuringSpoon.usd",
+                
+                # 小物件类
+                "ball": "My_asset/G/assets/Ball/Ball.usd",
+                "ball_walnut": "My_asset/G/Ball_Walnut_01.usd",
+                "clock": "My_asset/G/assets/Clock/Clock.usd",
+                "soap_dispenser": "My_asset/G/assets/SoapDispenser/SoapDispenser.usd",
+                "soap_sponge": "My_asset/G/assets/SoapSponge/SoapSponge.usd",
+                "hand_towel": "My_asset/G/assets/HandTowel/HandTowel.usd",
+                
+                
+                # 小工具类
+                "nail": "My_asset/G/assets/Nail/Nail.usd",
+                "hook": "My_asset/G/assets/Hook/Hook.usd",
+                "hanger": "My_asset/G/assets/Hanger/Hanger.usd",
             },
             
-            # T类 - 任务区配置 (基础形状表示功能区)
+            # T类 - 任务区配置 (功能区域标识)
             "task_areas": {
-                "collection_zone_s": "Furniture/Desks/Desk_01.usd",   # S类回收台
-                "collection_zone_g": "Furniture/Desks/Desk_01.usd",   # G类存放台
-                "sorting_area": "Furniture/CoffeeTables/Midtown.usd",  # 分拣中心
-                "maintenance_station": "Furniture/EndTables/Festus01.usd", # 维护站点
+                "trash_can": "My_asset/T/trash_can.usd",
+                "recycling_bin": "My_asset/T/trash_can.usd",     # 复用垃圾桶资产作为回收箱
+                "storage_box": "My_asset/T/trash_can.usd",       # 复用垃圾桶资产作为储物箱
             }
         }
         
@@ -514,6 +770,30 @@ class OSGTCleanupSystemConfig:
                 tolerance_graspable=1.6,
                 nav_timeout_sweepable=60
             )
+        elif scenario_type == "lobby":
+            self.update_navigation(
+                tolerance_sweepable=1.0,
+                tolerance_graspable=1.0,
+                nav_timeout_sweepable=45
+            )
+        elif scenario_type == "office":
+            self.update_navigation(
+                tolerance_sweepable=0.9,
+                tolerance_graspable=1.0,
+                nav_timeout_sweepable=40
+            )
+        elif scenario_type == "kitchen":
+            self.update_navigation(
+                tolerance_sweepable=0.7,
+                tolerance_graspable=0.8,
+                nav_timeout_sweepable=35
+            )
+        elif scenario_type == "restaurant":
+            self.update_navigation(
+                tolerance_sweepable=1.1,
+                tolerance_graspable=1.2,
+                nav_timeout_sweepable=50
+            )
     
     def print_summary(self):
         """打印OSGT配置摘要"""
@@ -531,6 +811,12 @@ class OSGTCleanupSystemConfig:
             for key, status in self._path_validation_results.items():
                 print(f"   - {key}: {status}")
         
+        print(f"🏠 背景场景配置:")
+        print(f"   - 文件路径: {self.BACKGROUND_ENVIRONMENT['usd_path']}")
+        print(f"   - 缩放比例: {self.BACKGROUND_ENVIRONMENT['scale']}")
+        print(f"   - 位置坐标: {self.BACKGROUND_ENVIRONMENT['position']}")
+        print(f"   - 旋转角度: {self.BACKGROUND_ENVIRONMENT['rotation_z']}°")
+        
         print(f"📏 OSGT缩放配置:")
         for key, value in self.SCALE_CONFIG.items():
             print(f"   - {key}: {value}")
@@ -545,4 +831,4 @@ class OSGTCleanupSystemConfig:
         print(f"🎯 OSGT导航容差: S类 {self.NAVIGATION['tolerance_sweepable']}m, G类 {self.NAVIGATION['tolerance_graspable']}m")
         print(f"⏱️ OSGT导航超时: S类 {self.NAVIGATION['nav_timeout_sweepable']}s, G类 {self.NAVIGATION['nav_timeout_graspable']}s")
         print("="*70)
-
+        

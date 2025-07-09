@@ -21,7 +21,7 @@ username = (
     'user'
 )
 
-config = OSGTCleanupSystemConfig(username, "residential")
+config = OSGTCleanupSystemConfig(username, "office")
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
 COORDINATE_SCALE = 0.01
@@ -1036,6 +1036,10 @@ class OSGTCreate3CleanupSystem:
     
     def smart_navigate_to_target(self, target_pos, osgt_type="sweepable", max_time=None, tolerance=None):
         """OSGT智能导航（集成LightBeam避障）"""
+        # 确保target_pos是numpy数组
+        if not isinstance(target_pos, np.ndarray):
+            target_pos = np.array(target_pos)
+        
         # 使用OSGT配置的默认值
         if max_time is None:
             if osgt_type == "sweepable":
@@ -1086,10 +1090,18 @@ class OSGTCreate3CleanupSystem:
     
     def _navigate_with_lightbeam_avoidance(self, target_pos, max_time, tolerance):
         """使用LightBeam避障的导航"""
+        # 确保target_pos是numpy数组
+        if not isinstance(target_pos, np.ndarray):
+            target_pos = np.array(target_pos)
+        
         start_time = time.time()
         
         while time.time() - start_time < max_time:
             current_pos, current_yaw = self.get_robot_pose()
+            
+            # 确保current_pos是numpy数组
+            if not isinstance(current_pos, np.ndarray):
+                current_pos = np.array(current_pos)
             
             # 检查是否到达目标
             distance_to_target = np.linalg.norm(current_pos[:2] - target_pos[:2])
@@ -1169,6 +1181,9 @@ class OSGTCreate3CleanupSystem:
             print(f"🧹 收集S类可清扫物: {item_name}")
             
             item_position = sweepable_object.get_world_pose()[0]
+            if not isinstance(item_position, np.ndarray):
+                item_position = np.array(item_position)
+            
             target_position = item_position.copy()
             target_position[2] = 0.0
             
@@ -1183,6 +1198,9 @@ class OSGTCreate3CleanupSystem:
             
             if nav_success:
                 robot_pos, _ = self.get_robot_pose()
+                if not isinstance(robot_pos, np.ndarray):
+                    robot_pos = np.array(robot_pos)
+                
                 collected_pos = robot_pos.copy()
                 collected_pos[2] = -1.0
                 
@@ -1208,6 +1226,9 @@ class OSGTCreate3CleanupSystem:
             print(f"🦾 收集G类可抓取物: {item_name} (高级抓取)")
             
             item_position = graspable_object.get_world_pose()[0]
+            if not isinstance(item_position, np.ndarray):
+                item_position = np.array(item_position)
+            
             target_position = item_position.copy()
             target_position[2] = 0.0
             
@@ -1249,6 +1270,9 @@ class OSGTCreate3CleanupSystem:
             print(f"🎯 访问T类任务区: {area_name}")
             
             area_position = task_area_object.get_world_pose()[0]
+            if not isinstance(area_position, np.ndarray):
+                area_position = np.array(area_position)
+            
             target_position = area_position.copy()
             target_position[2] = 0.0
             
@@ -1326,7 +1350,7 @@ class OSGTCreate3CleanupSystem:
                 obj_pos, _ = obj.get_world_pose()
                 print(f"     - {obj.name}: {obj_pos[:2]}")
         
-        # 机械臂姿态演示（根据配置决定是否运行）
+        # 机械臂姿态演示（根据配置决定是否运行）        #注释掉
         if self.config.EXPERIMENT["run_arm_pose_demo"]:
             print(f"\n🦾 机械臂姿态演示（配置驱动）...")
             for pose in self.config.EXPERIMENT["demo_poses"]:
@@ -1334,7 +1358,6 @@ class OSGTCreate3CleanupSystem:
                     if self.config.DEBUG["show_grasp_details"]:
                         print(f"   快速测试 {pose} 姿态...")
                     self._move_arm_to_pose(pose)
-        
         self._move_arm_to_pose("home")
         
         # 智能收集循环（最近物体优先）
@@ -1343,16 +1366,25 @@ class OSGTCreate3CleanupSystem:
         
         print(f"\n🤖 开始智能收集（最近物体优先 + LightBeam避障）...")
         
-        while True:
+        max_attempts = 20
+        attempt_count = 0
+        
+        while attempt_count < max_attempts:
             current_pos, _ = self.get_robot_pose()
+            if not isinstance(current_pos, np.ndarray):
+                current_pos = np.array(current_pos)
             
             # 获取最近的未收集物体
             nearest_obj, obj_type = self.object_manager.get_nearest_uncollected_object(current_pos)
             
             if nearest_obj is None:
+                print("✅ 所有物体收集完成")
                 break
             
             obj_pos = nearest_obj.get_world_pose()[0]
+            if not isinstance(obj_pos, np.ndarray):
+                obj_pos = np.array(obj_pos)
+            
             distance = np.linalg.norm(obj_pos[:2] - current_pos[:2])
             
             print(f"\n📍 目标: {nearest_obj.name} ({obj_type}) 距离: {distance:.2f}m")
@@ -1361,11 +1393,14 @@ class OSGTCreate3CleanupSystem:
                 success = self.collect_sweepable_item(nearest_obj)
             elif obj_type == "graspable":
                 success = self.collect_graspable_item(nearest_obj)
+            else:
+                success = False
             
             if success:
                 collection_success += 1
                 self.object_manager.mark_object_collected(nearest_obj.name, obj_type)
             
+            attempt_count += 1
             time.sleep(self.config.EXPERIMENT["collection_delay"])
         
         # 访问T类任务区（可选）
@@ -1462,11 +1497,12 @@ class OSGTCreate3CleanupSystem:
 
 def main():
     """主函数（OSGT四类物体版）"""
-    
+    system = OSGTCreate3CleanupSystem(config)
+    system._wait_for_stability(30.0)
     # 显示OSGT配置摘要
     config.print_summary()
     
-    system = OSGTCreate3CleanupSystem(config)
+    
     
     try:
         print("🚀 启动OSGT四类物体清洁系统（通用版+CUDA加速+LightBeam避障）...")
@@ -1488,7 +1524,8 @@ def main():
             print("❌ OSGT场景创建失败")
             return
         
-        success = system.setup_post_load()
+        success = system.setup_post_load()    #注释掉后加载设置
+      
         if not success:
             print("❌ 后加载设置失败")
             return
