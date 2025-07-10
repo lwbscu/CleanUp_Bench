@@ -21,7 +21,7 @@ username = (
     'user'
 )
 
-config = OSGTCleanupSystemConfig(username, "office")
+config = OSGTCleanupSystemConfig(username, "kitchen")  #lobby,lobby_collision,office,office_collision,hospital,hospital_collision,kitchen,kitchen_collision,restaurant,restaurant_collision，isaacWarehouse，isaacWarehouse_collision
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
 COORDINATE_SCALE = 0.01
@@ -1498,7 +1498,7 @@ class OSGTCreate3CleanupSystem:
 def main():
     """主函数（OSGT四类物体版）"""
     system = OSGTCreate3CleanupSystem(config)
-    system._wait_for_stability(30.0)
+    system._wait_for_stability(10.0)
     # 显示OSGT配置摘要
     config.print_summary()
     

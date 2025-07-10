@@ -106,6 +106,12 @@ class OSGTCleanupSystemConfig:
                 "position": [-4.26926, 11.01489, 0.0],
                 "rotation_z": 270.0
             },
+            "isaacWarehouse": {
+                "usd_path": "My_asset/background/IsaacWarehouse.usd",
+                'scale': 0.01,
+                "position": [0.0, 0.0, 0.0],
+                "rotation_z": 0.0
+            },
             # 其他场景类型默认使用Lobby配置
             "residential": {
                 "usd_path": "My_asset/background/Lobby.usd",
@@ -335,6 +341,39 @@ class OSGTCleanupSystemConfig:
                     "trash_can": [2100.0, -2300.0, 0.0, 0.0],        # 垃圾桶
                     "recycling_bin": [-350.0, 850.0, 0.0, 45.0],     # 回收箱
                 }
+                
+            },
+            "isaacWarehouse": {
+                # 仓库环境 - 用于存储和分拣
+                # 环境边界: [-441,903,0] [2187,903,0] [2187,221,0] [523,114,0]
+                #  [523,-2413,0] [2133,-1627,0]  [2105,-2418,0]
+                # X轴范围: -441 到 2187, Y轴范围: -2418 到 903
+                "obstacles": {
+                    "carter_v1_physx_lidar":[840, 2180.0, 0.27, 0.0], # Carter机器人
+            
+                },
+                "sweepable": {
+                    # S类 - 可清扫物位置配置 (6个物体在餐厅边界内随机分布)
+                    "bubble_marble_02": [1200.0, 700.0, 0],       # 气泡弹珠2
+                    "metalballs": [1500.0, -1800.0, 0.03],           # 金属球
+                    "plasticballs": [-300.0, 800.0, 0],           # 塑料球
+                    "CHARGING_BEAM_KFDM": [921.0, -1960.0, -0.25],           # 充电束KFDM
+                    "DOCKING_V_KF7L": [482.0, -2511.0, -0.8],           # 充电束KFDM
+                },
+                "graspable": {
+                    # G类 - 可抓取物位置配置 (6个物体在餐厅边界内随机分布)
+                    "mechanical_pencil": [1000.0, 500.0, 0.01],       # 机械铅笔
+                    "ISO7380": [985.0, 590.0, 1.05],          # ISO7380
+                    "_51_large_clamp": [1200.0, -1090.0, 1],  # 大夹具
+                    "M5_LOCKNUT__JFn": [987.0, 569.0, 1.05],  # M5锁紧螺母
+                    "_35_power_drill": [950.0, 544.0, 1.07, 0.0],     # 35功率drill
+                },
+                "task_areas": {
+                    # T类 - 任务区位置配置 (3个任务区在餐厅边界内随机分布)
+                    
+                    
+                    "small_KLT": [1266.0, -1418.0, 0.235, 0.07],  # 小KLT
+                }
             },
             # 其他场景类型使用lobby的配置作为默认值
             "residential": "lobby",
@@ -475,6 +514,7 @@ class OSGTCleanupSystemConfig:
                 "stool_wooden": "My_asset/O/StoolWooden_1.usd",
                 "stove_area": "My_asset/O/StoveArea_grp.usd",
                 "jar": "My_asset/G/assets/Jar/Jar.usd",
+                "carter_v1_physx_lidar": "My_asset/O/carter_v1_physx_lidar.usd",
             },
             
             # S类 - 可清扫物配置 (小颗粒吸附收集)
@@ -487,6 +527,8 @@ class OSGTCleanupSystemConfig:
                 "metalballs": "My_asset/S/Metalballs.usd",
                 "plasticballs": "My_asset/S/Plasticballs.usd",
                 "solid_marble_01": "My_asset/S/Solid_Marble_01.usd",
+                "CHARGING_BEAM_KFDM": "My_asset/S/CHARGING_BEAM_KFDM.usd",
+                "DOCKING_V_KF7L": "My_asset/S/DOCKING_V_KF7L.usd",
             },
             
             # G类 - 可抓取物配置 (马克笔到小水瓶大小的物体)
@@ -532,6 +574,10 @@ class OSGTCleanupSystemConfig:
                 "nail": "My_asset/G/assets/Nail/Nail.usd",
                 "hook": "My_asset/G/assets/Hook/Hook.usd",
                 "hanger": "My_asset/G/assets/Hanger/Hanger.usd",
+                "ISO7380": "My_asset/G/Tools/ISO7380.usd",
+                "_35_power_drill": "My_asset/G/Tools/_35_power_drill.usd",
+                "_51_large_clamp": "My_asset/G/Tools/_51_large_clamp.usd",
+                "M5_LOCKNUT__JFn": "My_asset/G/Tools/M5_LOCKNUT__JFn.usd",
             },
             
             # T类 - 任务区配置 (功能区域标识)
@@ -539,6 +585,7 @@ class OSGTCleanupSystemConfig:
                 "trash_can": "My_asset/T/trash_can.usd",
                 "recycling_bin": "My_asset/T/trash_can.usd",     # 复用垃圾桶资产作为回收箱
                 "storage_box": "My_asset/T/trash_can.usd",       # 复用垃圾桶资产作为储物箱
+                "small_KLT": "My_asset/T/small_KLT.usd",
             }
         }
         
@@ -637,28 +684,7 @@ class OSGTCleanupSystemConfig:
             print("3. 检查住宅资产包是否已下载")
             print("="*60)
     
-    def set_user_paths(self, isaac_assets_base=None, isaac_sim_install=None):
-        """手动设置用户路径"""
-        if isaac_assets_base:
-            self.USER_PATHS["isaac_assets_base"] = isaac_assets_base
-            print(f"🔧 手动设置Isaac资产路径: {isaac_assets_base}")
-        
-        if isaac_sim_install:
-            self.USER_PATHS["isaac_sim_install"] = isaac_sim_install
-            print(f"🔧 手动设置Isaac Sim路径: {isaac_sim_install}")
-        
-        self.PATHS.update({
-            "residential_assets_root": os.path.join(
-                self.USER_PATHS["isaac_assets_base"], 
-                "NVIDIA/Assets/ArchVis/Residential"
-            ),
-            "robot_usd_path": os.path.join(
-                self.USER_PATHS["isaac_assets_base"], 
-                "Isaac/Robots/iRobot/create_3_with_arm_lightbeam.usd"
-            ),
-        })
-        
-        self._validate_paths()
+    
     
     # ==================== 背景场景配置方法 ====================
     

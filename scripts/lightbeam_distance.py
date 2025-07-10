@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-OSGT四类物体LightBeam避障系统
-实时读取8个传感器距离数据，提供高级决策算法避障
+OSGT简化版LightBeam避障系统
+6个传感器双层配置：前方+左前45度+右前45度
+简单直接的避障算法，支持后退脱困
 """
 
 import numpy as np
@@ -19,30 +20,35 @@ except ImportError:
     cp = np
 
 class OSGTLightBeamAvoidanceSystem:
-    """OSGT四类物体LightBeam避障系统"""
+    """OSGT简化版LightBeam避障系统（6传感器双层配置+脱困功能）"""
     
     def __init__(self, config):
         self.config = config
         self.robot_prim_path = config.PATHS["robot_prim_path"]
         
-        # 传感器配置
+        # 简化的传感器配置（6个传感器双层）
         self.sensors = {
-            "front_bottom": {"layer": "bottom", "direction": "front", "weight": 1.0},
-            "back_bottom": {"layer": "bottom", "direction": "back", "weight": 0.6},
-            "left_bottom": {"layer": "bottom", "direction": "left", "weight": 0.8},
-            "right_bottom": {"layer": "bottom", "direction": "right", "weight": 0.8},
-            "front_top": {"layer": "top", "direction": "front", "weight": 0.7},
-            "back_top": {"layer": "top", "direction": "back", "weight": 0.4},
-            "left_top": {"layer": "top", "direction": "left", "weight": 0.5},
-            "right_top": {"layer": "top", "direction": "right", "weight": 0.5}
+            # 底盘层传感器
+            "front_bottom": {"layer": "bottom", "direction": "front", "angle": 0},
+            "left_bottom": {"layer": "bottom", "direction": "left", "angle": -45},  # 左前45度
+            "right_bottom": {"layer": "bottom", "direction": "right", "angle": 45}, # 右前45度
+            
+            # 机械臂层传感器  
+            "front_top": {"layer": "top", "direction": "front", "angle": 0},
+            "left_top": {"layer": "top", "direction": "left", "angle": -45},        # 左前45度
+            "right_top": {"layer": "top", "direction": "right", "angle": 45}        # 右前45度
         }
         
-        # 优化的避障参数
-        self.min_valid_distance = 0.2  # 最小有效距离，过滤地板干扰
-        self.max_valid_distance = 8.0  # 最大有效距离
-        self.critical_distance = 1.5
-        self.warning_distance = 3.0
-        self.safe_distance = 4.5
+        # 简化的避障参数
+        self.min_valid_distance = 0.15  # 最小有效距离
+        self.max_valid_distance = 6.0   # 最大有效距离
+        self.safe_distance = 1.5        # 安全距离
+        self.warning_distance = 2.5     # 警告距离
+        
+        # 脱困参数
+        self.stuck_threshold = 1.0       # 被困检测阈值
+        self.backup_distance = 2.0       # 后退距离（增加到2米）
+        self.escape_turn_angle = 75.0    # 脱困转向角度（默认75度，动态调整）
         
         # 速度控制参数
         self.max_linear_speed = config.ROBOT_CONTROL["max_linear_velocity"]
@@ -52,32 +58,30 @@ class OSGTLightBeamAvoidanceSystem:
         self.lightbeam_interface = None
         self.timeline = None
         
-        # 距离数据缓存（增加缓存大小以提高稳定性）
+        # 简化的距离数据缓存（只保留3个值）
         self.distance_buffer = {}
         for sensor_name in self.sensors.keys():
-            self.distance_buffer[sensor_name] = deque(maxlen=7)
+            self.distance_buffer[sensor_name] = deque(maxlen=3)
         
-        # 避障状态
+        # 当前距离数据
         self.current_distances = {}
-        self.last_avoidance_action = "直行"
         self.last_display_time = 0
         
-        # 运动稳定性控制
-        self.movement_history = deque(maxlen=10)
-        self.last_angular_command = 0.0
-        self.angular_change_threshold = 0.8
-        self.direction_stability_counter = 0
-        self.stable_direction_threshold = 3
+        # 简化的速度平滑
+        self.prev_linear = 0.0
+        self.prev_angular = 0.0
+        self.smooth_factor = 0.3
         
-        # 速度平滑（增强版）
-        self.velocity_smoother = VelocitySmoother(alpha=0.25)
-        
-        # GPU加速
-        self.use_gpu = GPU_AVAILABLE
-        
-        # 地板过滤
-        self.ground_filter_enabled = True
-        self.ground_detection_threshold = 0.15
+        # 脱困状态管理
+        self.escape_mode = False
+        self.escape_stage = "none"  # "none", "backing", "turning", "checking"
+        self.escape_start_time = 0
+        self.escape_backup_time = 4.0    # 后退时间（增加到4秒）
+        self.escape_turn_time = 5.0      # 转向时间（增加到5秒，确保完成转向）
+        self.escape_check_time = 1.0     # 检查时间（秒）
+        self.escape_direction = 1        # 1=左转，-1=右转
+        self.stuck_count = 0             # 被困计数器
+        self.stuck_detection_threshold = 5  # 连续检测到被困的次数阈值（减少到5）
         
         # 初始化
         self.initialize()
@@ -88,12 +92,14 @@ class OSGTLightBeamAvoidanceSystem:
             self.lightbeam_interface = _range_sensor.acquire_lightbeam_sensor_interface()
             import omni.timeline
             self.timeline = omni.timeline.get_timeline_interface()
+            print("✅ LightBeam传感器接口初始化成功（6传感器双层配置+脱困功能）")
             return True
         except Exception as e:
+            print(f"❌ LightBeam传感器接口初始化失败: {e}")
             return False
     
     def get_sensor_distance(self, sensor_name: str) -> Optional[float]:
-        """获取单个传感器的距离数据（带地板过滤）"""
+        """获取单个传感器的距离数据"""
         if not self.timeline or not self.timeline.is_playing():
             return None
         
@@ -107,11 +113,6 @@ class OSGTLightBeamAvoidanceSystem:
                 valid_distances = []
                 for i in range(len(linear_depth)):
                     if beam_hit[i] and linear_depth[i] > self.min_valid_distance:
-                        # 地板过滤：底层传感器忽略过近的检测
-                        if "bottom" in sensor_name and linear_depth[i] < self.ground_detection_threshold:
-                            continue
-                        
-                        # 有效距离范围过滤
                         if linear_depth[i] <= self.max_valid_distance:
                             valid_distances.append(linear_depth[i])
                 
@@ -129,198 +130,247 @@ class OSGTLightBeamAvoidanceSystem:
             distance = self.get_sensor_distance(sensor_name)
             if distance is not None:
                 self.distance_buffer[sensor_name].append(distance)
-                self.current_distances[sensor_name] = self.get_smoothed_distance(sensor_name)
+                # 简单平均滤波
+                buffer_data = list(self.distance_buffer[sensor_name])
+                self.current_distances[sensor_name] = sum(buffer_data) / len(buffer_data)
             else:
                 self.current_distances[sensor_name] = None
     
-    def get_smoothed_distance(self, sensor_name: str) -> Optional[float]:
-        """获取平滑后的距离数据（增强滤波）"""
-        buffer = self.distance_buffer[sensor_name]
-        if len(buffer) < 2:
-            return None
+    def get_direction_distances(self) -> Tuple[float, float, float]:
+        """获取三个方向的合成距离（双层传感器取最小值）"""
+        # 前方距离：取前上前下最小值
+        front_distances = []
+        if self.current_distances.get("front_bottom") is not None:
+            front_distances.append(self.current_distances["front_bottom"])
+        if self.current_distances.get("front_top") is not None:
+            front_distances.append(self.current_distances["front_top"])
+        front_dist = min(front_distances) if front_distances else float('inf')
         
-        # 使用加权平均，最新数据权重更高
-        distances = list(buffer)
-        weights = np.linspace(0.5, 1.0, len(distances))
-        weights = weights / np.sum(weights)
+        # 左前45度距离：取左上左下最小值
+        left_distances = []
+        if self.current_distances.get("left_bottom") is not None:
+            left_distances.append(self.current_distances["left_bottom"])
+        if self.current_distances.get("left_top") is not None:
+            left_distances.append(self.current_distances["left_top"])
+        left_dist = min(left_distances) if left_distances else float('inf')
         
-        return np.average(distances, weights=weights)
+        # 右前45度距离：取右上右下最小值
+        right_distances = []
+        if self.current_distances.get("right_bottom") is not None:
+            right_distances.append(self.current_distances["right_bottom"])
+        if self.current_distances.get("right_top") is not None:
+            right_distances.append(self.current_distances["right_top"])
+        right_dist = min(right_distances) if right_distances else float('inf')
+        
+        return front_dist, left_dist, right_dist
+    
+    def check_if_stuck(self, front_dist: float, left_dist: float, right_dist: float) -> bool:
+        """检查是否被困住（包括贴墙、夹缝和转向困难情况）"""
+        front_stuck = front_dist < self.stuck_threshold
+        left_stuck = left_dist < self.stuck_threshold
+        right_stuck = right_dist < self.stuck_threshold
+        
+        # 被困条件1：前方危险 AND (左方危险 OR 右方危险)
+        condition1 = front_stuck and (left_stuck or right_stuck)
+        
+        # 被困条件2：贴墙情况 - 一侧非常近（贴墙卡住）
+        wall_stuck_threshold = 0.6  # 贴墙检测阈值
+        condition2 = (left_dist < wall_stuck_threshold and front_dist < 1.2) or \
+                    (right_dist < wall_stuck_threshold and front_dist < 1.2)
+        
+        # 被困条件3：夹缝困境 - 左右两侧都危险，无法转弯
+        gap_stuck_threshold = 0.9  # 夹缝检测阈值
+        condition3 = (left_dist < gap_stuck_threshold and right_dist < gap_stuck_threshold)
+        
+        # 被困条件4：转向困难 - 前方警告级别 + 一侧危险（虽然另一侧安全但转不过去）
+        turn_difficulty_threshold = 1.8  # 前方转向困难阈值
+        condition4 = (front_dist < turn_difficulty_threshold) and \
+                    (left_stuck or right_stuck)
+        
+        # 任一条件满足即被困
+        if condition1 or condition2 or condition3 or condition4:
+            self.stuck_count += 1
+            if self.stuck_count >= self.stuck_detection_threshold:
+                return True
+        else:
+            self.stuck_count = 0
+            
+        return False
+    
+    def execute_escape_sequence(self, front_dist: float, left_dist: float, right_dist: float) -> Tuple[float, float]:
+        """执行脱困序列"""
+        current_time = time.time()
+        elapsed_time = current_time - self.escape_start_time
+        
+        if self.escape_stage == "backing":
+            # 第一阶段：后退
+            if elapsed_time < self.escape_backup_time:
+                print(f"   ⬅️ 后退中... ({elapsed_time:.1f}/{self.escape_backup_time:.1f}s)")
+                return -0.4, 0.0  # 后退速度稍快一些
+            else:
+                # 切换到转向阶段
+                self.escape_stage = "turning"
+                self.escape_start_time = current_time
+                print(f"   🔄 开始转向{self.escape_turn_angle}度...")
+                
+        elif self.escape_stage == "turning":
+            # 第二阶段：转向（增强版，确保完成目标角度）
+            if elapsed_time < self.escape_turn_time:
+                # 计算需要的角速度，确保在时间内完成转向
+                required_angular_speed = math.radians(self.escape_turn_angle) / self.escape_turn_time
+                # 增加安全系数，确保转向充分
+                actual_angular_speed = required_angular_speed * 10  # 增加100%的速度
+                # 限制在最大角速度范围内
+                actual_angular_speed = min(actual_angular_speed, self.max_angular_speed * 8)
+                
+                turn_vel = self.escape_direction * actual_angular_speed
+                print(f"   🔄 转向中... ({elapsed_time:.1f}/{self.escape_turn_time:.1f}s) 角速度: {math.degrees(actual_angular_speed):.1f}°/s")
+                return 0.0, turn_vel
+            else:
+                # 切换到检查阶段
+                self.escape_stage = "checking"
+                self.escape_start_time = current_time
+                print("   👀 检查脱困效果...")
+                
+        elif self.escape_stage == "checking":
+            # 第三阶段：检查是否脱困
+            if elapsed_time < self.escape_check_time:
+                return 0.0, 0.0  # 停止，观察环境
+            else:
+                # 检查是否成功脱困
+                if front_dist > self.safe_distance and min(left_dist, right_dist) > 0.8:
+                    print("   ✅ 脱困成功！")
+                    self.escape_mode = False
+                    self.escape_stage = "none"
+                    self.stuck_count = 0
+                else:
+                    print("   ⚠️ 脱困失败，重新开始...")
+                    self.escape_stage = "backing"
+                    self.escape_start_time = current_time
+                    # 切换脱困方向
+                    self.escape_direction *= -1
+                    print(f"   🔄 切换到{'左' if self.escape_direction > 0 else '右'}侧脱困")
+        
+        return 0.0, 0.0
     
     def calculate_avoidance_command(self, target_linear: float, target_angular: float, 
                                    current_pos: np.ndarray, target_pos: np.ndarray) -> Tuple[float, float]:
-        """计算避障后的运动命令（优化版）"""
-        # 确保输入参数是numpy数组
-        if not isinstance(current_pos, np.ndarray):
-            current_pos = np.array(current_pos)
-        if not isinstance(target_pos, np.ndarray):
-            target_pos = np.array(target_pos)
-        
+        """简化的避障算法（支持脱困功能）"""
         # 更新传感器数据
         self.update_all_sensor_data()
         
-        # 计算到目标的方向向量
-        direction_to_target = target_pos[:2] - current_pos[:2]
-        distance_to_target = np.linalg.norm(direction_to_target)
+        # 获取三个方向的合成距离
+        front_dist, left_dist, right_dist = self.get_direction_distances()
         
-        if distance_to_target > 0.1:
-            target_direction = direction_to_target / distance_to_target
-            target_angle = np.arctan2(target_direction[1], target_direction[0])
-        else:
-            target_angle = 0.0
-        
-        # 使用优化的避障算法
-        avoidance_linear, avoidance_angular = self._calculate_stable_avoidance(
-            target_linear, target_angular, target_angle, distance_to_target
-        )
-        
-        # 运动稳定性检查
-        avoidance_linear, avoidance_angular = self._apply_stability_filter(
-            avoidance_linear, avoidance_angular
-        )
-        
-        # 显示传感器状态（控制频率）
-        self._display_sensor_status()
-        
-        return self.velocity_smoother.smooth(avoidance_linear, avoidance_angular)
-    
-    def _calculate_stable_avoidance(self, target_linear: float, target_angular: float,
-                                   target_angle: float, distance_to_target: float) -> Tuple[float, float]:
-        """稳定的避障计算"""
-        # 获取方向距离
-        front_dist = self._get_direction_distance("front")
-        back_dist = self._get_direction_distance("back")
-        left_dist = self._get_direction_distance("left")
-        right_dist = self._get_direction_distance("right")
-        
-        # 计算最小距离
-        valid_distances = [d for d in [front_dist, back_dist, left_dist, right_dist] if d is not None]
-        min_distance = min(valid_distances) if valid_distances else float('inf')
-        
-        # 基础避障逻辑
-        avoidance_linear = target_linear
-        avoidance_angular = target_angular
-        
-        if min_distance < self.critical_distance:
-            # 紧急避障 - 但保持最小前进速度
-            avoidance_linear = max(0.08, target_linear * 0.2)
-            
-            if front_dist and front_dist < self.critical_distance:
-                # 前方紧急避障
-                if left_dist and right_dist:
-                    # 选择较安全的方向，但不要急转
-                    turn_intensity = min(1.5, 3.0 / max(front_dist, 0.1))
-                    avoidance_angular = turn_intensity if left_dist > right_dist else -turn_intensity
-                else:
-                    avoidance_angular = 1.2
-            
-            self.last_avoidance_action = "紧急避障"
-            
-        elif min_distance < self.warning_distance:
-            # 警告区域避障
-            speed_factor = (min_distance - self.critical_distance) / (self.warning_distance - self.critical_distance)
-            avoidance_linear = target_linear * (0.3 + 0.4 * speed_factor)
-            
-            if front_dist and front_dist < self.warning_distance:
-                # 前方警告避障
-                turn_factor = (self.warning_distance - front_dist) / self.warning_distance
-                if left_dist and right_dist:
-                    turn_intensity = 0.8 * turn_factor
-                    avoidance_angular = turn_intensity if left_dist > right_dist else -turn_intensity
-                else:
-                    avoidance_angular = 0.6 * turn_factor
-            
-            # 侧面避障微调
-            if left_dist and left_dist < self.warning_distance:
-                side_factor = (self.warning_distance - left_dist) / self.warning_distance * 0.3
-                avoidance_angular -= side_factor
-            if right_dist and right_dist < self.warning_distance:
-                side_factor = (self.warning_distance - right_dist) / self.warning_distance * 0.3
-                avoidance_angular += side_factor
-                
-            self.last_avoidance_action = "减速避障"
-        else:
-            # 正常区域 - 轻微调整以保持安全距离
-            if front_dist and front_dist < self.safe_distance:
-                gentle_factor = (self.safe_distance - front_dist) / self.safe_distance * 0.2
-                avoidance_linear = target_linear * (1.0 - gentle_factor)
-                
-                if left_dist and right_dist:
-                    turn_intensity = 0.3 * gentle_factor
-                    avoidance_angular = turn_intensity if left_dist > right_dist else -turn_intensity
-            
-            self.last_avoidance_action = "正常行驶"
-        
-        # 后方避障处理
-        if back_dist and back_dist < self.warning_distance and avoidance_linear < 0:
-            avoidance_linear = max(0.0, avoidance_linear)
-            avoidance_angular = 1.0 if left_dist and left_dist > right_dist else -1.0
-            self.last_avoidance_action = "后方避障"
-        
-        # 限制速度
-        avoidance_linear = np.clip(avoidance_linear, 0.0, self.max_linear_speed)
-        avoidance_angular = np.clip(avoidance_angular, -self.max_angular_speed, self.max_angular_speed)
-        
-        return avoidance_linear, avoidance_angular
-    
-    def _apply_stability_filter(self, linear_vel: float, angular_vel: float) -> Tuple[float, float]:
-        """应用稳定性过滤器，减少摇晃"""
-        # 角速度变化平滑
-        angular_change = abs(angular_vel - self.last_angular_command)
-        
-        if angular_change > self.angular_change_threshold:
-            # 角度变化过大，进行平滑
-            smooth_factor = 0.6
-            angular_vel = smooth_factor * self.last_angular_command + (1 - smooth_factor) * angular_vel
-            
-            # 重置方向稳定计数器
-            self.direction_stability_counter = 0
-        else:
-            # 角度变化较小，增加稳定性
-            self.direction_stability_counter += 1
-            
-            if self.direction_stability_counter >= self.stable_direction_threshold:
-                # 方向稳定，可以更积极地调整
-                pass
+        # 检查是否需要脱困
+        is_stuck = self.check_if_stuck(front_dist, left_dist, right_dist)
+        if not self.escape_mode and is_stuck:
+            # 强制开始脱困序列
+            # 判断被困类型
+            if front_dist < self.stuck_threshold and (left_dist < self.stuck_threshold or right_dist < self.stuck_threshold):
+                print("🚨 检测到前方+侧面被困，启动脱困序列...")
+                self.escape_turn_angle = 75.0
+            elif (left_dist < 0.6 and front_dist < 1.2) or (right_dist < 0.6 and front_dist < 1.2):
+                print("🚨 检测到贴墙被困，启动脱困序列...")
+                self.escape_turn_angle = 75.0
+            elif left_dist < 0.9 and right_dist < 0.9:
+                print("🚨 检测到夹缝困境，启动脱困序列...")
+                self.escape_turn_angle = 90.0
+            elif front_dist < 1.8 and (left_dist < self.stuck_threshold or right_dist < self.stuck_threshold):
+                print("🚨 检测到转向困难，启动脱困序列...")
+                self.escape_turn_angle = 85.0  # 转向困难需要较大角度
             else:
-                # 方向不稳定，保守调整
-                angular_vel *= 0.8
-        
-        # 记录运动历史
-        self.movement_history.append((linear_vel, angular_vel, time.time()))
-        
-        # 检查是否有摇晃模式
-        if len(self.movement_history) >= 8:
-            recent_angular = [cmd[1] for cmd in list(self.movement_history)[-6:]]
+                print("🚨 检测到被困，启动脱困序列...")
+                self.escape_turn_angle = 75.0
             
-            # 检测前后摇晃（角速度频繁变号）
-            sign_changes = 0
-            for i in range(1, len(recent_angular)):
-                if recent_angular[i] * recent_angular[i-1] < 0:
-                    sign_changes += 1
+            self.escape_mode = True
+            self.escape_stage = "backing"
+            self.escape_start_time = time.time()
             
-            if sign_changes >= 3:
-                # 检测到摇晃，强制稳定
-                angular_vel *= 0.4
-                if abs(angular_vel) < 0.2:
-                    angular_vel = 0.0
+            # 选择脱困方向（向较安全的一侧）
+            if left_dist > right_dist:
+                self.escape_direction = 1  # 左转
+                print(f"   📍 选择左侧脱困（左侧距离: {left_dist:.2f}m > 右侧距离: {right_dist:.2f}m）")
+            else:
+                self.escape_direction = -1  # 右转
+                print(f"   📍 选择右侧脱困（右侧距离: {right_dist:.2f}m > 左侧距离: {left_dist:.2f}m）")
+            
+            print(f"   🔄 设置转向角度: {self.escape_turn_angle}度")
         
-        self.last_angular_command = angular_vel
+        # 如果正在脱困，执行脱困序列
+        if self.escape_mode:
+            linear_vel, angular_vel = self.execute_escape_sequence(front_dist, left_dist, right_dist)
+        else:
+            # 正常避障逻辑
+            linear_vel, angular_vel = self._normal_avoidance(target_linear, target_angular, 
+                                                           front_dist, left_dist, right_dist)
         
-        return linear_vel, angular_vel
+        # 限制速度范围
+        linear_vel = np.clip(linear_vel, -self.max_linear_speed, self.max_linear_speed)
+        angular_vel = np.clip(angular_vel, -self.max_angular_speed, self.max_angular_speed)
+        
+        # 简单的速度平滑
+        smooth_linear = self.smooth_factor * self.prev_linear + (1 - self.smooth_factor) * linear_vel
+        smooth_angular = self.smooth_factor * self.prev_angular + (1 - self.smooth_factor) * angular_vel
+        
+        self.prev_linear = smooth_linear
+        self.prev_angular = smooth_angular
+        
+        # 显示状态
+        self._display_sensor_status(front_dist, left_dist, right_dist)
+        
+        return smooth_linear, smooth_angular
     
-    def _get_direction_distance(self, direction: str) -> Optional[float]:
-        """获取某个方向的最小距离"""
-        distances = []
-        for sensor_name, sensor_info in self.sensors.items():
-            if sensor_info["direction"] == direction:
-                dist = self.current_distances.get(sensor_name)
-                if dist is not None:
-                    distances.append(dist)
+    def _normal_avoidance(self, target_linear: float, target_angular: float,
+                         front_dist: float, left_dist: float, right_dist: float) -> Tuple[float, float]:
+        """正常避障逻辑"""
+        output_linear = target_linear
+        output_angular = target_angular
         
-        return min(distances) if distances else None
+        if front_dist < self.safe_distance:
+            # 前方有障碍物
+            if front_dist < 0.8:  # 非常近，紧急避障
+                output_linear = 0.1  # 几乎停止，但保持微小前进
+                
+                # 选择较安全的方向转向
+                if left_dist > right_dist:
+                    output_angular = 0.8  # 左转
+                elif right_dist > left_dist:
+                    output_angular = -0.8  # 右转
+                else:
+                    output_angular = 0.8  # 默认左转
+                    
+            else:  # 中等距离，减速+转向
+                # 根据距离调整速度
+                speed_factor = (front_dist - 0.8) / (self.safe_distance - 0.8)
+                output_linear = target_linear * max(0.3, speed_factor)
+                
+                # 温和转向
+                if left_dist > right_dist:
+                    output_angular = 0.4
+                elif right_dist > left_dist:
+                    output_angular = -0.4
+                else:
+                    output_angular = 0.4
+        
+        else:
+            # 前方安全，检查侧面
+            side_adjustment = 0.0
+            
+            # 左侧调整
+            if left_dist < self.warning_distance:
+                side_adjustment -= 0.2 * (self.warning_distance - left_dist) / self.warning_distance
+                
+            # 右侧调整
+            if right_dist < self.warning_distance:
+                side_adjustment += 0.2 * (self.warning_distance - right_dist) / self.warning_distance
+                
+            output_angular = target_angular + side_adjustment
+        
+        return output_linear, output_angular
     
-    def _display_sensor_status(self):
-        """显示传感器状态（2秒间隔，单行格式）"""
+    def _display_sensor_status(self, front_dist: float, left_dist: float, right_dist: float):
+        """显示传感器状态（增强版，显示脱困状态）"""
         current_time = time.time()
         
         if current_time - self.last_display_time < 2.0:
@@ -328,67 +378,44 @@ class OSGTLightBeamAvoidanceSystem:
         
         self.last_display_time = current_time
         
-        # 构建单行输出
-        sensor_info = []
-        for sensor_name in self.sensors.keys():
-            distance = self.current_distances.get(sensor_name)
-            if distance is not None:
-                status = "安全"
-                if distance < self.critical_distance:
-                    status = "危险"
-                elif distance < self.warning_distance:
-                    status = "警告"
-                sensor_info.append(f"{sensor_name}: {distance:.2f}m ({status})")
+        # 状态判断
+        def get_status(dist):
+            if dist < 0.8:
+                return "危险"
+            elif dist < self.safe_distance:
+                return "警告"
+            elif dist < self.warning_distance:
+                return "注意"
             else:
-                sensor_info.append(f"{sensor_name}: 无数据")
+                return "安全"
         
-        # 单行输出
-        sensors_line = " | ".join(sensor_info)
-        print(f"传感器距离: {sensors_line}")
-        print(f"避障操作: {self.last_avoidance_action}")
-        print("-" * 100)
-
-
-class VelocitySmoother:
-    """增强版速度平滑器"""
-    
-    def __init__(self, alpha=0.25):
-        self.alpha = alpha
-        self.prev_linear = 0.0
-        self.prev_angular = 0.0
-        self.velocity_history = deque(maxlen=5)
-    
-    def smooth(self, target_linear: float, target_angular: float) -> Tuple[float, float]:
-        """平滑速度变化"""
-        # 基础平滑
-        smooth_linear = self.alpha * self.prev_linear + (1 - self.alpha) * target_linear
-        smooth_angular = self.alpha * self.prev_angular + (1 - self.alpha) * target_angular
+        # 基本状态显示
+        status_msg = (f"📡 LightBeam状态: 前方{front_dist:.2f}m({get_status(front_dist)}) | "
+                     f"左前45°{left_dist:.2f}m({get_status(left_dist)}) | "
+                     f"右前45°{right_dist:.2f}m({get_status(right_dist)})")
         
-        # 记录历史
-        self.velocity_history.append((smooth_linear, smooth_angular))
+        # 脱困状态显示
+        if self.escape_mode:
+            status_msg += f" | 🚨 脱困模式: {self.escape_stage}"
+        elif self.stuck_count > 0:
+            # 显示被困类型
+            if front_dist < self.stuck_threshold and (left_dist < self.stuck_threshold or right_dist < self.stuck_threshold):
+                stuck_type = "前方+侧面"
+            elif (left_dist < 0.6 and front_dist < 1.2) or (right_dist < 0.6 and front_dist < 1.2):
+                stuck_type = "贴墙"
+            elif left_dist < 0.9 and right_dist < 0.9:
+                stuck_type = "夹缝困境"
+            elif front_dist < 1.8 and (left_dist < self.stuck_threshold or right_dist < self.stuck_threshold):
+                stuck_type = "转向困难"
+            else:
+                stuck_type = "其他"
+            status_msg += f" | ⚠️ 被困检测({stuck_type}): {self.stuck_count}/{self.stuck_detection_threshold}"
         
-        # 额外的摇晃检测
-        if len(self.velocity_history) >= 4:
-            angular_velocities = [v[1] for v in self.velocity_history]
-            
-            # 检测高频振荡
-            oscillation_count = 0
-            for i in range(1, len(angular_velocities)):
-                if angular_velocities[i] * angular_velocities[i-1] < 0:
-                    oscillation_count += 1
-            
-            if oscillation_count >= 2:
-                # 检测到振荡，强制平滑
-                smooth_angular *= 0.5
-        
-        self.prev_linear = smooth_linear
-        self.prev_angular = smooth_angular
-        
-        return smooth_linear, smooth_angular
+        print(status_msg)
 
 
 class OSGTObjectManager:
-    """OSGT物体管理器"""
+    """OSGT物体管理器（保持不变）"""
     
     def __init__(self, system):
         self.system = system
