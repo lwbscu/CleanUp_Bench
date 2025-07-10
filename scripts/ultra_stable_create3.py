@@ -3,7 +3,7 @@
 OSGT四类物体标准室内清洁系统（通用版）
 O类-障碍物 | S类-可清扫物 | G类-可抓取物 | T类-任务区
 适配场景：家庭住宅、学校、医院、工厂等
-集成高级抓取策略、CUDA加速、力控制反馈、LightBeam避障
+集成高级抓取策略、CUDA加速、力控制反馈
 """
 
 from isaacsim import SimulationApp
@@ -14,17 +14,22 @@ import os
 
 # 获取用户名（支持多种方式）
 username = (
-    os.environ.get('CLEANUP_BENCH_USERNAME') or
-    os.environ.get('USER') or
-    os.environ.get('USERNAME') or
-    os.environ.get('LOGNAME') or
-    'user'
+    os.environ.get('CLEANUP_BENCH_USERNAME') or  # 从环境变量获取
+    os.environ.get('USER') or                    # Linux/macOS
+    os.environ.get('USERNAME') or                # Windows  
+    os.environ.get('LOGNAME') or                 # 备用
+    'user'                                       # 默认值
 )
 
-config = OSGTCleanupSystemConfig(username, "kitchen")  #lobby,lobby_collision,office,office_collision,hospital,hospital_collision,kitchen,kitchen_collision,restaurant,restaurant_collision，isaacWarehouse，isaacWarehouse_collision
+print(f"🔧 启动OSGT四类物体清洁系统，用户: {username}")
+
+# 根据需要选择配置和场景类型
+config = OSGTCleanupSystemConfig(username, "isaacWarehouse")  #lobby,lobby_collision,
+#office,office_collision,hospital,hospital_collision,kitchen,kitchen_collision,
+#restaurant,restaurant_collision，isaacWarehouse，isaacWarehouse_collision
 
 # 修正坐标系统：将配置中的大坐标转换为合理的世界坐标
-COORDINATE_SCALE = 0.01
+COORDINATE_SCALE = 0.01  # 将几百的坐标缩放到几米的世界坐标
 
 # 使用配置初始化仿真应用
 simulation_app = SimulationApp({
@@ -62,9 +67,6 @@ from pick_and_place import (
     create_advanced_pick_and_place_system,
     GraspPhase
 )
-
-# 导入LightBeam避障系统
-from lightbeam_distance import OSGTLightBeamAvoidanceSystem, OSGTObjectManager
 
 class OSGTCreate3CleanupSystem:
     """基于OSGT四类物体标准的Create-3+机械臂室内清洁系统（通用版）"""
@@ -111,11 +113,11 @@ class OSGTCreate3CleanupSystem:
         self.current_angular_vel = 0.0
         
         # OSGT四类物体相关
-        self.obstacles_objects = []
-        self.sweepable_objects = []
-        self.graspable_objects = []
-        self.task_areas_objects = []
-        self.collected_objects = []
+        self.obstacles_objects = []           # O类 - 障碍物
+        self.sweepable_objects = []          # S类 - 可清扫物 
+        self.graspable_objects = []          # G类 - 可抓取物
+        self.task_areas_objects = []         # T类 - 任务区
+        self.collected_objects = []          # 收集清单
         self.scene_objects = []
         
         # 高级抓取放下系统
@@ -123,10 +125,6 @@ class OSGTCreate3CleanupSystem:
         
         # 简化导航系统
         self.advanced_navigation = None
-        
-        # LightBeam避障系统
-        self.lightbeam_avoidance = None
-        self.object_manager = None
         
         # 从配置读取导航参数（保留兼容性）
         self.grid_resolution = config.NAVIGATION["grid_resolution"]
@@ -200,7 +198,7 @@ class OSGTCreate3CleanupSystem:
     
     def initialize_isaac_sim(self):
         """初始化Isaac Sim环境（OSGT+CUDA优化）"""
-        print("🚀 正在初始化Isaac Sim环境（OSGT四类+CUDA加速+LightBeam避障）...")
+        print("🚀 正在初始化Isaac Sim环境（OSGT四类+CUDA加速）...")
         
         try:
             # 验证资产文件
@@ -256,12 +254,7 @@ class OSGTCreate3CleanupSystem:
             self.advanced_pick_place.set_world_reference(self.world)
             print("✅ OSGT高级抓取放下系统初始化完成")
             
-            # 初始化LightBeam避障系统
-            self.lightbeam_avoidance = OSGTLightBeamAvoidanceSystem(self.config)
-            self.object_manager = OSGTObjectManager(self)
-            print("✅ OSGT LightBeam避障系统初始化完成")
-            
-            print("✅ Isaac Sim环境初始化完成（OSGT四类+CUDA加速+LightBeam避障）")
+            print("✅ Isaac Sim环境初始化完成（OSGT四类+CUDA加速）")
             return True
             
         except Exception as e:
@@ -1026,20 +1019,8 @@ class OSGTCreate3CleanupSystem:
             if self.config.DEBUG["enable_debug_output"]:
                 print(f"停止机器人失败: {e}")
     
-    def _normalize_angle(self, angle):
-        """角度标准化到[-π, π]"""
-        while angle > np.pi:
-            angle -= 2 * np.pi
-        while angle < -np.pi:
-            angle += 2 * np.pi
-        return angle
-    
     def smart_navigate_to_target(self, target_pos, osgt_type="sweepable", max_time=None, tolerance=None):
-        """OSGT智能导航（集成LightBeam避障）"""
-        # 确保target_pos是numpy数组
-        if not isinstance(target_pos, np.ndarray):
-            target_pos = np.array(target_pos)
-        
+        """OSGT智能导航（根据物体类型调整参数）"""
         # 使用OSGT配置的默认值
         if max_time is None:
             if osgt_type == "sweepable":
@@ -1068,8 +1049,10 @@ class OSGTCreate3CleanupSystem:
             # 记录导航开始时间
             nav_start_time = time.time()
             
-            # 使用LightBeam避障的导航
-            success = self._navigate_with_lightbeam_avoidance(target_pos, max_time, tolerance)
+            # 使用OSGT导航系统（兼容性调用）
+            success = self.advanced_navigation.navigate_to_target(
+                self, target_pos, max_time, tolerance
+            )
             
             # 记录导航时间
             nav_time = time.time() - nav_start_time
@@ -1086,55 +1069,9 @@ class OSGTCreate3CleanupSystem:
             
         except Exception as e:
             print(f"OSGT导航失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-    
-    def _navigate_with_lightbeam_avoidance(self, target_pos, max_time, tolerance):
-        """使用LightBeam避障的导航"""
-        # 确保target_pos是numpy数组
-        if not isinstance(target_pos, np.ndarray):
-            target_pos = np.array(target_pos)
-        
-        start_time = time.time()
-        
-        while time.time() - start_time < max_time:
-            current_pos, current_yaw = self.get_robot_pose()
-            
-            # 确保current_pos是numpy数组
-            if not isinstance(current_pos, np.ndarray):
-                current_pos = np.array(current_pos)
-            
-            # 检查是否到达目标
-            distance_to_target = np.linalg.norm(current_pos[:2] - target_pos[:2])
-            if distance_to_target < tolerance:
-                self._stop_robot()
-                return True
-            
-            # 计算基础导航命令
-            direction = target_pos[:2] - current_pos[:2]
-            target_angle = np.arctan2(direction[1], direction[0])
-            angle_diff = self._normalize_angle(target_angle - current_yaw)
-            
-            # 基础速度计算
-            base_linear = min(0.5, distance_to_target * 0.8)
-            base_angular = angle_diff * 1.2
-            
-            # 应用LightBeam避障
-            if self.lightbeam_avoidance:
-                final_linear, final_angular = self.lightbeam_avoidance.calculate_avoidance_command(
-                    base_linear, base_angular, current_pos, target_pos
-                )
-            else:
-                final_linear, final_angular = base_linear, base_angular
-            
-            # 发送运动命令
-            self._send_movement_command(final_linear, final_angular)
-            
-            # 渲染
-            self.world.step(render=True)
-            time.sleep(0.016)
-        
-        self._stop_robot()
-        return False
     
     # ==================== OSGT四类物体处理方法 ====================
     
@@ -1181,9 +1118,6 @@ class OSGTCreate3CleanupSystem:
             print(f"🧹 收集S类可清扫物: {item_name}")
             
             item_position = sweepable_object.get_world_pose()[0]
-            if not isinstance(item_position, np.ndarray):
-                item_position = np.array(item_position)
-            
             target_position = item_position.copy()
             target_position[2] = 0.0
             
@@ -1198,9 +1132,6 @@ class OSGTCreate3CleanupSystem:
             
             if nav_success:
                 robot_pos, _ = self.get_robot_pose()
-                if not isinstance(robot_pos, np.ndarray):
-                    robot_pos = np.array(robot_pos)
-                
                 collected_pos = robot_pos.copy()
                 collected_pos[2] = -1.0
                 
@@ -1226,9 +1157,6 @@ class OSGTCreate3CleanupSystem:
             print(f"🦾 收集G类可抓取物: {item_name} (高级抓取)")
             
             item_position = graspable_object.get_world_pose()[0]
-            if not isinstance(item_position, np.ndarray):
-                item_position = np.array(item_position)
-            
             target_position = item_position.copy()
             target_position[2] = 0.0
             
@@ -1270,9 +1198,6 @@ class OSGTCreate3CleanupSystem:
             print(f"🎯 访问T类任务区: {area_name}")
             
             area_position = task_area_object.get_world_pose()[0]
-            if not isinstance(area_position, np.ndarray):
-                area_position = np.array(area_position)
-            
             target_position = area_position.copy()
             target_position[2] = 0.0
             
@@ -1310,12 +1235,12 @@ class OSGTCreate3CleanupSystem:
             return False
     
     def run_osgt_cleanup_demo(self):
-        """运行OSGT四类物体清洁演示（集成LightBeam避障）"""
+        """运行OSGT四类物体清洁演示（通用版）"""
         print("\n" + "="*70)
         print("🏠 OSGT四类物体标准室内清洁系统演示")
         print(f"场景类型: {self.config.SCENARIO_TYPE.upper()}")
         print("🚧 O类-障碍物 | 🧹 S类-可清扫物 | 🦾 G类-可抓取物 | 🎯 T类-任务区")
-        print("配置驱动 | 统一时间步 | CUDA加速抓取 | 力控制反馈 | LightBeam避障")
+        print("配置驱动 | 统一时间步 | CUDA加速抓取 | 力控制反馈")
         print("="*70)
         
         # 使用配置的稳定时间
@@ -1350,7 +1275,7 @@ class OSGTCreate3CleanupSystem:
                 obj_pos, _ = obj.get_world_pose()
                 print(f"     - {obj.name}: {obj_pos[:2]}")
         
-        # 机械臂姿态演示（根据配置决定是否运行）        #注释掉
+        # 机械臂姿态演示（根据配置决定是否运行）
         if self.config.EXPERIMENT["run_arm_pose_demo"]:
             print(f"\n🦾 机械臂姿态演示（配置驱动）...")
             for pose in self.config.EXPERIMENT["demo_poses"]:
@@ -1358,55 +1283,32 @@ class OSGTCreate3CleanupSystem:
                     if self.config.DEBUG["show_grasp_details"]:
                         print(f"   快速测试 {pose} 姿态...")
                     self._move_arm_to_pose(pose)
+        
         self._move_arm_to_pose("home")
         
-        # 智能收集循环（最近物体优先）
         collection_success = 0
         total_items = len(self.sweepable_objects) + len(self.graspable_objects)
         
-        print(f"\n🤖 开始智能收集（最近物体优先 + LightBeam避障）...")
-        
-        max_attempts = 20
-        attempt_count = 0
-        
-        while attempt_count < max_attempts:
-            current_pos, _ = self.get_robot_pose()
-            if not isinstance(current_pos, np.ndarray):
-                current_pos = np.array(current_pos)
-            
-            # 获取最近的未收集物体
-            nearest_obj, obj_type = self.object_manager.get_nearest_uncollected_object(current_pos)
-            
-            if nearest_obj is None:
-                print("✅ 所有物体收集完成")
-                break
-            
-            obj_pos = nearest_obj.get_world_pose()[0]
-            if not isinstance(obj_pos, np.ndarray):
-                obj_pos = np.array(obj_pos)
-            
-            distance = np.linalg.norm(obj_pos[:2] - current_pos[:2])
-            
-            print(f"\n📍 目标: {nearest_obj.name} ({obj_type}) 距离: {distance:.2f}m")
-            
-            if obj_type == "sweepable":
-                success = self.collect_sweepable_item(nearest_obj)
-            elif obj_type == "graspable":
-                success = self.collect_graspable_item(nearest_obj)
-            else:
-                success = False
-            
-            if success:
+        # 收集S类可清扫物
+        print(f"\n🧹 开始智能收集S类可清扫物...")
+        for i, sweepable in enumerate(self.sweepable_objects):
+            print(f"\n📍 S类目标 {i+1}/{len(self.sweepable_objects)}: {sweepable.name}")
+            if self.collect_sweepable_item(sweepable):
                 collection_success += 1
-                self.object_manager.mark_object_collected(nearest_obj.name, obj_type)
-            
-            attempt_count += 1
+            time.sleep(self.config.EXPERIMENT["collection_delay"])
+        
+        # 收集G类可抓取物（使用高级抓取）
+        print(f"\n🦾 开始高级抓取G类可抓取物...")
+        for i, graspable in enumerate(self.graspable_objects):
+            print(f"\n📍 G类目标 {i+1}/{len(self.graspable_objects)}: {graspable.name}")
+            if self.collect_graspable_item(graspable):
+                collection_success += 1
             time.sleep(self.config.EXPERIMENT["collection_delay"])
         
         # 访问T类任务区（可选）
         if self.task_areas_objects:
             print(f"\n🎯 访问T类任务区...")
-            for i, task_area in enumerate(self.task_areas_objects[:2]):
+            for i, task_area in enumerate(self.task_areas_objects[:2]):  # 只访问前2个任务区
                 print(f"\n📍 T类目标 {i+1}: {task_area.name}")
                 self.visit_task_area(task_area)
                 time.sleep(self.config.EXPERIMENT["collection_delay"])
@@ -1416,7 +1318,7 @@ class OSGTCreate3CleanupSystem:
         home_position = np.array([0.0, 0.0, 0.0])
         self.smart_navigate_to_target(
             home_position, 
-            osgt_type="task_areas"
+            osgt_type="task_areas"  # 使用任务区的导航参数
         )
         
         self._move_arm_to_pose("home")
@@ -1445,10 +1347,10 @@ class OSGTCreate3CleanupSystem:
         # 显示OSGT配置总结
         self.config.print_summary()
         
-        print("\n✅ OSGT四类物体清洁演示完成（集成LightBeam避障）！")
+        print("\n✅ OSGT四类物体清洁演示完成！")
         print("💡 要调整参数，请编辑 config.py 文件")
         print("🏢 通用设计，适配家庭、学校、医院、工厂等场景")
-        print("🔧 O类避障 | S类吸附 | G类精确抓取 | T类任务执行 | LightBeam实时避障")
+        print("🔧 O类避障 | S类吸附 | G类精确抓取 | T类任务执行")
     
     def _print_osgt_performance_stats(self):
         """打印OSGT性能统计（增强版）"""
@@ -1497,15 +1399,14 @@ class OSGTCreate3CleanupSystem:
 
 def main():
     """主函数（OSGT四类物体版）"""
-    system = OSGTCreate3CleanupSystem(config)
-    system._wait_for_stability(10.0)
+    
     # 显示OSGT配置摘要
     config.print_summary()
     
-    
+    system = OSGTCreate3CleanupSystem(config)
     
     try:
-        print("🚀 启动OSGT四类物体清洁系统（通用版+CUDA加速+LightBeam避障）...")
+        print("🚀 启动OSGT四类物体清洁系统（通用版+CUDA加速）...")
         
         # 高效初始化
         success = system.initialize_isaac_sim()
@@ -1524,8 +1425,7 @@ def main():
             print("❌ OSGT场景创建失败")
             return
         
-        success = system.setup_post_load()    #注释掉后加载设置
-      
+        success = system.setup_post_load()
         if not success:
             print("❌ 后加载设置失败")
             return
@@ -1545,7 +1445,6 @@ def main():
         print("💡 配置文件: config.py")
         print("🏢 OSGT四类标准：O类避障 | S类吸附 | G类精确抓取 | T类任务执行")
         print("🌐 通用设计，适配家庭、学校、医院、工厂等场景")
-        print("📡 LightBeam实时避障，8个传感器全方位保护")
         try:
             while True:
                 system.world.step(render=True)
