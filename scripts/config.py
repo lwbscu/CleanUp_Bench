@@ -160,7 +160,7 @@ class OSGTCleanupSystemConfig:
             ),
             "robot_usd_path": os.path.join(
                 self.USER_PATHS["isaac_assets_base"], 
-                "Isaac/Robots/iRobot/create_3_with_arm_lightbeam.usd"
+                "Isaac/Robots/iRobot/create_3_with_arm.usd"
             ),
             "robot_prim_path": "/World/create3_robot",
         }
